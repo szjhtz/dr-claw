@@ -70,8 +70,8 @@ export default function MainContentTitle({
           </div>
         ) : showChatNewSession ? (
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-foreground leading-tight">{t('mainContent.newSession')}</h2>
-            <div className="text-xs text-muted-foreground truncate leading-tight">{selectedProject.displayName}</div>
+            <h2 className="text-[15px] font-bold text-foreground leading-tight">{t('mainContent.newSession')}</h2>
+            <div className="text-[12px] text-muted-foreground truncate leading-tight mt-0.5">{selectedProject.displayName}</div>
           </div>
         ) : (
           <div className="min-w-0">

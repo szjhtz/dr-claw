@@ -223,6 +223,13 @@ export const api = {
       body: formData,
       headers: {}, // Let browser set multipart boundary
     }),
+  scanLocalSkills: (dirPath) =>
+    authenticatedFetch(`/api/skills/scan-local?path=${encodeURIComponent(dirPath)}`),
+  importLocalSkills: (sourcePath, skillNames) =>
+    authenticatedFetch('/api/skills/import-from-local', {
+      method: 'POST',
+      body: JSON.stringify({ sourcePath, skillNames }),
+    }),
 
   // Generic GET method for any endpoint
   get: (endpoint) => authenticatedFetch(`/api${endpoint}`),

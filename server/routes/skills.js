@@ -1,8 +1,10 @@
 import express from 'express';
 import { promises as fs } from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { extractProjectDirectory } from '../projects.js';
+import { FORBIDDEN_PATHS } from './projects.js';
 
 const GLOBAL_SKILLS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'skills');
 
@@ -293,6 +295,165 @@ router.get('/file', async (req, res) => {
       console.error('[ERROR] Skill file read error:', error.message);
       res.status(500).json({ error: error.message });
     }
+  }
+});
+
+// GET /scan-local — scan a local directory for skill subdirectories
+router.get('/scan-local', async (req, res) => {
+  try {
+    const rawPath = req.query.path || '~/.claude/skills';
+    const resolvedPath = rawPath.replace(/^~/, os.homedir());
+    const absolutePath = path.resolve(resolvedPath);
+
+    // Security: reject forbidden system paths
+    const normalizedPath = path.normalize(absolutePath);
+    for (const forbidden of FORBIDDEN_PATHS) {
+      if (normalizedPath === forbidden || normalizedPath.startsWith(forbidden + path.sep)) {
+        return res.status(403).json({ error: `Scanning system directory "${forbidden}" is not allowed.` });
+      }
+    }
+
+    // Validate the path exists and is a directory
+    let stat;
+    try {
+      stat = await fs.stat(absolutePath);
+    } catch {
+      return res.status(404).json({ error: `Path does not exist: ${rawPath}` });
+    }
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: `Path is not a directory: ${rawPath}` });
+    }
+
+    // Scan for subdirectories (1-level deep)
+    const entries = await fs.readdir(absolutePath, { withFileTypes: true });
+    const skills = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith('.')) continue;
+
+      const skillDir = path.join(absolutePath, entry.name);
+      const skillMdPath = path.join(skillDir, 'SKILL.md');
+      let hasSkillMd = false;
+      try {
+        await fs.access(skillMdPath);
+        hasSkillMd = true;
+      } catch {
+        // No SKILL.md
+      }
+
+      // Check if already imported in GLOBAL_SKILLS_DIR
+      let alreadyImported = false;
+      try {
+        await fs.access(path.join(GLOBAL_SKILLS_DIR, entry.name));
+        alreadyImported = true;
+      } catch {
+        // Not imported
+      }
+
+      skills.push({
+        name: entry.name,
+        hasSkillMd,
+        alreadyImported,
+        sourcePath: skillDir,
+      });
+    }
+
+    res.json({ path: rawPath, resolvedPath: absolutePath, skills });
+  } catch (error) {
+    console.error('[skills] scan-local error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /import-from-local — copy selected skills from a local directory into GLOBAL_SKILLS_DIR
+router.post('/import-from-local', async (req, res) => {
+  try {
+    const { sourcePath: rawPath, skillNames } = req.body || {};
+    const resolvedPath = (rawPath || '~/.claude/skills').replace(/^~/, os.homedir());
+    const absolutePath = path.resolve(resolvedPath);
+
+    // Security: reject forbidden system paths
+    const normalizedPath = path.normalize(absolutePath);
+    for (const forbidden of FORBIDDEN_PATHS) {
+      if (normalizedPath === forbidden || normalizedPath.startsWith(forbidden + path.sep)) {
+        return res.status(403).json({ error: `Importing from system directory "${forbidden}" is not allowed.` });
+      }
+    }
+
+    // Validate the path exists and is a directory
+    let stat;
+    try {
+      stat = await fs.stat(absolutePath);
+    } catch {
+      return res.status(404).json({ error: `Path does not exist: ${rawPath || '~/.claude/skills'}` });
+    }
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: `Path is not a directory: ${rawPath || '~/.claude/skills'}` });
+    }
+
+    // If skillNames is provided, only import those; otherwise scan all subdirectories
+    let dirsToImport = [];
+    if (Array.isArray(skillNames) && skillNames.length > 0) {
+      for (const name of skillNames) {
+        const skillDir = path.join(absolutePath, name);
+        try {
+          const s = await fs.stat(skillDir);
+          if (s.isDirectory()) {
+            dirsToImport.push({ name, sourcePath: skillDir });
+          }
+        } catch {
+          // Skip missing
+        }
+      }
+    } else {
+      const entries = await fs.readdir(absolutePath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+        dirsToImport.push({ name: entry.name, sourcePath: path.join(absolutePath, entry.name) });
+      }
+    }
+
+    await fs.mkdir(GLOBAL_SKILLS_DIR, { recursive: true });
+
+    const imported = [];
+    const skipped = [];
+    const errors = [];
+
+    for (const { name, sourcePath: srcDir } of dirsToImport) {
+      const destDir = path.join(GLOBAL_SKILLS_DIR, name);
+      try {
+        // Check if already exists
+        try {
+          await fs.access(destDir);
+          skipped.push(name);
+          continue;
+        } catch {
+          // Does not exist — proceed with copy
+        }
+
+        await fs.cp(srcDir, destDir, { recursive: true });
+
+        // Update stage-skill-map.json with origin 'local-import'
+        const stageSkillMapPath = path.join(GLOBAL_SKILLS_DIR, 'stage-skill-map.json');
+        let stageSkillMap = { skillOrigins: {} };
+        try {
+          stageSkillMap = JSON.parse(await fs.readFile(stageSkillMapPath, 'utf8'));
+        } catch { /* use defaults */ }
+        stageSkillMap.skillOrigins = stageSkillMap.skillOrigins || {};
+        stageSkillMap.skillOrigins[name] = 'local-import';
+        await fs.writeFile(stageSkillMapPath, JSON.stringify(stageSkillMap, null, 2), 'utf8');
+
+        imported.push(name);
+      } catch (err) {
+        errors.push(`${name}: ${err.message}`);
+      }
+    }
+
+    res.json({ imported, skipped, errors });
+  } catch (error) {
+    console.error('[skills] import-from-local error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

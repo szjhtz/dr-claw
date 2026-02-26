@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Layers, RefreshCw, Search, Sparkles, X } from 'lucide-react';
+import { Check, Download, Layers, Loader2, RefreshCw, Search, Sparkles, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../utils/api';
 type SkillNode = {
@@ -92,6 +92,17 @@ const UI_TEXT: Record<LocaleKey, Record<string, string>> = {
     defaultDomain: '领域: 通用',
     sourcePlatform: '来源: 平台自研',
     headerCount: '{{shown}}/{{total}} skills',
+    importLocal: '导入本地技能',
+    importModalTitle: '从本地目录导入技能',
+    scan: '扫描',
+    scanning: '扫描中...',
+    importSelected: '导入选中',
+    importing: '导入中...',
+    importSuccess: '成功导入 {{count}} 个技能',
+    importSkipped: '已跳过 {{count}} 个已存在的技能',
+    noSkillsFound: '未在该目录中发现技能。',
+    alreadyImported: '已导入',
+    pathLabel: '技能目录路径',
   },
   en: {
     loading: 'Loading skills...',
@@ -111,6 +122,17 @@ const UI_TEXT: Record<LocaleKey, Record<string, string>> = {
     defaultDomain: 'Domain: General',
     sourcePlatform: 'Source: VibeLab',
     headerCount: '{{shown}}/{{total}} skills',
+    importLocal: 'Import Local Skills',
+    importModalTitle: 'Import skills from local directory',
+    scan: 'Scan',
+    scanning: 'Scanning...',
+    importSelected: 'Import Selected',
+    importing: 'Importing...',
+    importSuccess: 'Successfully imported {{count}} skills',
+    importSkipped: 'Skipped {{count}} already-imported skills',
+    noSkillsFound: 'No skills found in this directory.',
+    alreadyImported: 'Already imported',
+    pathLabel: 'Skills directory path',
   },
   ko: {
     loading: 'Loading skills...',
@@ -130,6 +152,17 @@ const UI_TEXT: Record<LocaleKey, Record<string, string>> = {
     defaultDomain: 'Domain: General',
     sourcePlatform: 'Source: VibeLab',
     headerCount: '{{shown}}/{{total}} skills',
+    importLocal: 'Import Local Skills',
+    importModalTitle: 'Import skills from local directory',
+    scan: 'Scan',
+    scanning: 'Scanning...',
+    importSelected: 'Import Selected',
+    importing: 'Importing...',
+    importSuccess: 'Successfully imported {{count}} skills',
+    importSkipped: 'Skipped {{count}} already-imported skills',
+    noSkillsFound: 'No skills found in this directory.',
+    alreadyImported: 'Already imported',
+    pathLabel: 'Skills directory path',
   },
 };
 
@@ -500,6 +533,14 @@ export default function SkillsDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string>('all');
   const [focusedSkill, setFocusedSkill] = useState<SkillSummary | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importPath, setImportPath] = useState('~/.claude/skills');
+  const [scanLoading, setScanLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [scannedSkills, setScannedSkills] = useState<Array<{ name: string; hasSkillMd: boolean; alreadyImported: boolean }>>([]);
+  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
+  const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [hasScanned, setHasScanned] = useState(false);
 
   const loadSkills = useCallback(async () => {
     setLoading(true);
@@ -597,6 +638,86 @@ export default function SkillsDashboard() {
     }
   }, [localeKey, text.fallbackDesc, text.fallbackNoSkillMd]);
 
+  const handleScanLocal = useCallback(async () => {
+    setScanLoading(true);
+    setImportMessage(null);
+    setScannedSkills([]);
+    setSelectedSkills(new Set());
+    setHasScanned(false);
+    try {
+      const response = await api.scanLocalSkills(importPath);
+      if (!response.ok) {
+        const err = await response.json();
+        setImportMessage({ type: 'error', text: err.error || 'Scan failed' });
+        return;
+      }
+      const data = await response.json();
+      setScannedSkills(data.skills || []);
+      setHasScanned(true);
+      // Pre-select skills that are not already imported
+      const newSelected = new Set<string>();
+      for (const skill of data.skills || []) {
+        if (!skill.alreadyImported) {
+          newSelected.add(skill.name);
+        }
+      }
+      setSelectedSkills(newSelected);
+    } catch (err) {
+      setImportMessage({ type: 'error', text: err instanceof Error ? err.message : 'Scan failed' });
+    } finally {
+      setScanLoading(false);
+    }
+  }, [importPath]);
+
+  const handleImportSelected = useCallback(async () => {
+    if (selectedSkills.size === 0) return;
+    setImportLoading(true);
+    setImportMessage(null);
+    try {
+      const response = await api.importLocalSkills(importPath, Array.from(selectedSkills));
+      if (!response.ok) {
+        const err = await response.json();
+        setImportMessage({ type: 'error', text: err.error || 'Import failed' });
+        return;
+      }
+      const data = await response.json();
+      const msgs: string[] = [];
+      if (data.imported?.length > 0) {
+        msgs.push(text.importSuccess.replace('{{count}}', String(data.imported.length)));
+      }
+      if (data.skipped?.length > 0) {
+        msgs.push(text.importSkipped.replace('{{count}}', String(data.skipped.length)));
+      }
+      if (data.errors?.length > 0) {
+        msgs.push(`Errors: ${data.errors.join(', ')}`);
+      }
+      setImportMessage({ type: data.errors?.length ? 'error' : 'success', text: msgs.join('. ') });
+      // Re-scan to update status
+      if (data.imported?.length > 0) {
+        const rescan = await api.scanLocalSkills(importPath);
+        if (rescan.ok) {
+          const rescanData = await rescan.json();
+          setScannedSkills(rescanData.skills || []);
+          setSelectedSkills(new Set());
+        }
+        // Refresh main skill list
+        loadSkills();
+      }
+    } catch (err) {
+      setImportMessage({ type: 'error', text: err instanceof Error ? err.message : 'Import failed' });
+    } finally {
+      setImportLoading(false);
+    }
+  }, [importPath, selectedSkills, text.importSuccess, text.importSkipped, loadSkills]);
+
+  const openImportModal = useCallback(() => {
+    setShowImportModal(true);
+    setScannedSkills([]);
+    setSelectedSkills(new Set());
+    setImportMessage(null);
+    setHasScanned(false);
+  }, []);
+
   useEffect(() => {
     loadSkills();
   }, [loadSkills]);
@@ -661,13 +782,22 @@ export default function SkillsDashboard() {
               </h2>
               <p className="text-sm text-muted-foreground mt-1">{headerSummary}</p>
             </div>
-            <button
-              onClick={loadSkills}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-background/80 text-sm text-foreground hover:bg-muted transition-colors"
-            >
-              <RefreshCw className="w-4 h-4" />
-              {text.refresh}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={openImportModal}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-background/80 text-sm text-foreground hover:bg-muted transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                {text.importLocal}
+              </button>
+              <button
+                onClick={loadSkills}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-background/80 text-sm text-foreground hover:bg-muted transition-colors"
+              >
+                <RefreshCw className="w-4 h-4" />
+                {text.refresh}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -815,6 +945,119 @@ export default function SkillsDashboard() {
             <div className="max-h-[60vh] overflow-auto rounded-lg border border-border/70 bg-muted/30 p-4">
               <p className="whitespace-pre-wrap text-sm leading-7 text-foreground">{focusedSkill.fullDescription}</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={() => setShowImportModal(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-border bg-card p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">{text.importModalTitle}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-foreground mb-1.5">{text.pathLabel}</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={importPath}
+                  onChange={(e) => setImportPath(e.target.value)}
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-sky-300/70 dark:focus:ring-sky-700/70"
+                  placeholder="~/.claude/skills"
+                />
+                <button
+                  onClick={handleScanLocal}
+                  disabled={scanLoading || !importPath.trim()}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {scanLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                  {scanLoading ? text.scanning : text.scan}
+                </button>
+              </div>
+            </div>
+
+            {importMessage && (
+              <div className={`mb-4 rounded-md border px-3 py-2 text-sm ${importMessage.type === 'success' ? 'border-green-300/60 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300' : 'border-red-300/60 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'}`}>
+                {importMessage.text}
+              </div>
+            )}
+
+            {hasScanned && scannedSkills.length === 0 && (
+              <div className="mb-4 rounded-md border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                {text.noSkillsFound}
+              </div>
+            )}
+
+            {scannedSkills.length > 0 && (
+              <div className="mb-4 max-h-[40vh] overflow-auto rounded-lg border border-border/70">
+                {scannedSkills.map((skill) => (
+                  <label
+                    key={skill.name}
+                    className={`flex items-center gap-3 px-3 py-2.5 border-b border-border/50 last:border-b-0 transition-colors ${skill.alreadyImported ? 'opacity-60' : 'hover:bg-muted/50 cursor-pointer'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedSkills.has(skill.name)}
+                      disabled={skill.alreadyImported}
+                      onChange={(e) => {
+                        const next = new Set(selectedSkills);
+                        if (e.target.checked) {
+                          next.add(skill.name);
+                        } else {
+                          next.delete(skill.name);
+                        }
+                        setSelectedSkills(next);
+                      }}
+                      className="rounded border-border"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-foreground">{skill.name}</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {skill.hasSkillMd && (
+                          <span className="text-[11px] text-muted-foreground">SKILL.md</span>
+                        )}
+                        {skill.alreadyImported && (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-green-600 dark:text-green-400">
+                            <Check className="w-3 h-3" />
+                            {text.alreadyImported}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {scannedSkills.length > 0 && (
+              <div className="flex justify-end">
+                <button
+                  onClick={handleImportSelected}
+                  disabled={importLoading || selectedSkills.size === 0}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 text-sm font-medium text-white hover:bg-sky-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  {importLoading ? text.importing : `${text.importSelected} (${selectedSkills.size})`}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

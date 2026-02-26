@@ -24,7 +24,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
 }) => {
   return (
     <details className={`relative group/details ${className}`} open={open}>
-      <summary className="flex items-center gap-1.5 text-xs cursor-pointer py-0.5 select-none group-open/details:sticky group-open/details:top-0 group-open/details:z-10 group-open/details:bg-background group-open/details:-mx-1 group-open/details:px-1">
+      <summary className="flex items-center gap-2 text-[13px] cursor-pointer py-1 select-none group-open/details:sticky group-open/details:top-0 group-open/details:z-10 group-open/details:bg-background group-open/details:-mx-1 group-open/details:px-1">
         <svg
           className="w-3.5 h-3.5 text-gray-400 dark:text-gray-600 transition-transform duration-150 group-open/details:rotate-90 flex-shrink-0"
           fill="none"

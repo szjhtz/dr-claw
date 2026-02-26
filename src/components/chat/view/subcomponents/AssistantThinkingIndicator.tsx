@@ -9,17 +9,17 @@ type AssistantThinkingIndicatorProps = {
 
 export default function AssistantThinkingIndicator({ selectedProvider }: AssistantThinkingIndicatorProps) {
   return (
-    <div className="chat-message assistant">
-      <div className="w-full">
-        <div className="flex items-center space-x-3 mb-2">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm flex-shrink-0 p-1 bg-transparent">
+    <div className="chat-message assistant flex flex-col w-full max-w-2xl mx-auto px-4 sm:px-6">
+      <div className="flex flex-col w-full mb-6">
+        <div className="flex items-center space-x-2 mb-2">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-sm flex-shrink-0">
             <SessionProviderLogo provider={selectedProvider} className="w-full h-full" />
           </div>
-          <div className="text-sm font-medium text-gray-900 dark:text-white">
+          <div className="text-xs font-semibold text-gray-900 dark:text-white">
             {selectedProvider === 'cursor' ? 'Cursor' : selectedProvider === 'codex' ? 'Codex' : 'Claude'}
           </div>
         </div>
-        <div className="w-full text-sm text-gray-500 dark:text-gray-400 pl-3 sm:pl-0">
+        <div className="w-full text-sm text-gray-500 dark:text-gray-400">
           <div className="flex items-center space-x-1">
             <div className="animate-pulse">.</div>
             <div className="animate-pulse" style={{ animationDelay: '0.2s' }}>
@@ -28,7 +28,7 @@ export default function AssistantThinkingIndicator({ selectedProvider }: Assista
             <div className="animate-pulse" style={{ animationDelay: '0.4s' }}>
               .
             </div>
-            <span className="ml-2">Thinking...</span>
+            <span className="ml-2 text-xs">Thinking...</span>
           </div>
         </div>
       </div>
