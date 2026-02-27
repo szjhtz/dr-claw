@@ -289,9 +289,8 @@ function ChatInterface({
             </p>
           </div>
         </div>
-        <div className="pointer-events-none fixed bottom-4 right-2 z-[120] w-[calc(100%-1rem)] max-w-[30rem] sm:right-4 sm:w-auto">
+        <div className="flex justify-end px-4 pb-4">
           <ChatTaskProgressPill
-            className="pointer-events-auto"
             onStartTask={(prompt?: string) =>
               setInput(prompt && prompt.trim() ? prompt : t('tasks.nextTaskPrompt', { defaultValue: 'Start the next task' }))
             }
@@ -349,9 +348,8 @@ function ChatInterface({
           isLoading={isLoading}
         />
 
-        <div className="pointer-events-none fixed bottom-4 right-2 z-[120] w-[calc(100%-1rem)] max-w-[30rem] sm:right-4 sm:w-auto">
+        <div className="flex justify-end px-4">
           <ChatTaskProgressPill
-            className="pointer-events-auto"
             onStartTask={(prompt?: string) =>
               setInput(prompt && prompt.trim() ? prompt : t('tasks.nextTaskPrompt', { defaultValue: 'Start the next task' }))
             }

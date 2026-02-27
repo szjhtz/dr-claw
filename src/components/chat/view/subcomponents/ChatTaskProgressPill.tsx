@@ -55,11 +55,6 @@ export default function ChatTaskProgressPill({
   const hasTasks = summary.total > 0;
   const isLoading = Boolean(isLoadingTasks);
 
-  // Hide the pill entirely when there are no tasks and not loading
-  if (!hasTasks && !isLoading) {
-    return null;
-  }
-
   return (
     <div
       className={`w-full max-w-[30rem] rounded-xl border border-border/70 bg-card/95 shadow-sm backdrop-blur ${className}`}

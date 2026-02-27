@@ -238,6 +238,7 @@
     "title": "Skill Shortcuts",
     "useAll": "Use All",
     "categories": {
+      "pipeline": "Pipeline Planning",
       "deepResearch": "Deep Research",
       "ideation": "Research Ideation",
       "experiment": "Experiment Dev",

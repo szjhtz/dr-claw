@@ -16,6 +16,7 @@ interface SkillCategory {
 const CATEGORIES: SkillCategory[] = [
   { key: 'deepResearch', icon: '🔍', skills: ['inno-deep-research', 'academic-researcher', 'biorxiv-database', 'dataset-discovery', 'inno-code-survey'] },
   { key: 'ideation', icon: '💡', skills: ['inno-idea-generation', 'inno-idea-eval', 'brainstorming-research-ideas', 'creative-thinking-for-research'] },
+  { key: 'pipeline', icon: '🗺️', skills: ['inno-pipeline-planner'] },
   { key: 'experiment', icon: '🧪', skills: ['inno-experiment-dev', 'inno-experiment-analysis', 'bioinformatics-init-analysis', 'inno-prepare-resources'] },
   { key: 'paperWriting', icon: '✏️', skills: ['inno-paper-writing', 'scientific-writing', 'ml-paper-writing', 'inno-figure-gen', 'inno-humanizer'] },
   { key: 'paperReview', icon: '📋', skills: ['inno-paper-reviewer', 'inno-reference-audit', 'inno-rclone-to-overleaf'] },
@@ -27,6 +28,7 @@ export default function SkillShortcutsPanel({
   textareaRef,
 }: SkillShortcutsPanelProps) {
   const { t } = useTranslation('chat');
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
   const inject = (prompt: string) => {
@@ -44,11 +46,18 @@ export default function SkillShortcutsPanel({
 
   return (
     <div className="w-full max-w-2xl mx-auto mt-4 mb-2">
-      <div className="rounded-xl border border-border/50 bg-card/60 p-4">
-        <h3 className="text-base font-semibold text-foreground mb-3">
-          {t('skillShortcuts.title')}
-        </h3>
+      <div className="rounded-xl border border-border/50 bg-card/60">
+        <button
+          onClick={() => setIsCollapsed((c) => !c)}
+          className="w-full flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors rounded-xl"
+        >
+          <h3 className="text-base font-semibold text-foreground">
+            {t('skillShortcuts.title')}
+          </h3>
+          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${isCollapsed ? '' : 'rotate-180'}`} />
+        </button>
 
+        {!isCollapsed && <div className="px-4 pb-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {CATEGORIES.map((cat) => {
             const isExpanded = expandedCategory === cat.key;
@@ -109,6 +118,7 @@ export default function SkillShortcutsPanel({
             </div>
           );
         })()}
+        </div>}
       </div>
     </div>
   );

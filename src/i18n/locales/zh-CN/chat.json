@@ -238,6 +238,7 @@
     "title": "技能快捷方式",
     "useAll": "全部使用",
     "categories": {
+      "pipeline": "流程规划",
       "deepResearch": "深度调研",
       "ideation": "研究构思",
       "experiment": "实验开发",

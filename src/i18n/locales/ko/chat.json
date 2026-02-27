@@ -238,6 +238,7 @@
     "title": "스킬 바로가기",
     "useAll": "모두 사용",
     "categories": {
+      "pipeline": "파이프라인 계획",
       "deepResearch": "심층 연구",
       "ideation": "연구 아이디어",
       "experiment": "실험 개발",

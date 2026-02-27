@@ -726,9 +726,19 @@ export default function SkillsDashboard() {
     setActiveTag('all');
   }, [localeKey]);
 
+  const searchFilteredSkills = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return skills;
+    return skills.filter((skill) =>
+      skill.name.toLowerCase().includes(q)
+      || skill.summary.toLowerCase().includes(q)
+      || skill.tags.some((tag) => tag.label.toLowerCase().includes(q))
+    );
+  }, [skills, searchQuery]);
+
   const allTags = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const skill of skills) {
+    for (const skill of searchFilteredSkills) {
       for (const tag of skill.tags) {
         counts.set(tag.label, (counts.get(tag.label) ?? 0) + 1);
       }
@@ -737,22 +747,14 @@ export default function SkillsDashboard() {
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([label, count]) => ({ label, count }));
-  }, [skills]);
+  }, [searchFilteredSkills]);
 
   const filteredSkills = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-
-    return skills.filter((skill) => {
-      const hitText = !q
-        || skill.name.toLowerCase().includes(q)
-        || skill.summary.toLowerCase().includes(q)
-        || skill.tags.some((tag) => tag.label.toLowerCase().includes(q));
-
-      const hitTag = activeTag === 'all' || skill.tags.some((tag) => tag.label === activeTag);
-
-      return hitText && hitTag;
-    });
-  }, [skills, searchQuery, activeTag]);
+    if (activeTag === 'all') return searchFilteredSkills;
+    return searchFilteredSkills.filter((skill) =>
+      skill.tags.some((tag) => tag.label === activeTag)
+    );
+  }, [searchFilteredSkills, activeTag]);
 
   const headerSummary = useMemo(() => {
     if (!hasSkillRoots) return text.noRoots;

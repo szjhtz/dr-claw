@@ -465,6 +465,7 @@ export function useChatComposerState({
     [handleImageFiles],
   );
 
+
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     accept: {
       'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'],
