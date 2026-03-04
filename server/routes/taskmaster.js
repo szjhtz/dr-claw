@@ -464,6 +464,7 @@ function buildFallbackTaskCandidates(briefData = {}) {
         `Finalize Ideation section${target}: clarify research goal, framing, and evidence plan.`,
         `Define Experiment section${target}: specify validation goal, protocol, and evaluation plan.`,
         `Prepare Publication section${target}: draft paper outline, figures/tables plan, and submission checklist.`,
+        `Create Presentation section${target}: draft slide outline, deck style, TTS config, and video assembly plan.`,
     ];
 }
 
@@ -480,12 +481,15 @@ function buildPipelineSkeletonCandidates(briefData = {}) {
         `Publication: draft paper outline and contribution boundaries${target}.`,
         `Publication: prepare figures/tables and artifact appendix${target}.`,
         `Publication: complete submission checklist and final review${target}.`,
+        `Presentation: draft slide outline and narration scripts${target}.`,
+        `Presentation: generate slide images from paper figures${target}.`,
+        `Presentation: generate TTS audio and assemble demo video${target}.`,
     ];
 }
 
 function parseBriefJsonToTaskCandidates(briefData = {}) {
     const candidates = [];
-    const sectionOrder = ['ideation', 'experiment', 'publication'];
+    const sectionOrder = ['ideation', 'experiment', 'publication', 'presentation'];
     const sectionData = briefData?.sections && typeof briefData.sections === 'object'
         ? briefData.sections
         : {};

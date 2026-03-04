@@ -1194,6 +1194,8 @@ function ResearchLab({ selectedProject, onNavigateToChat }) {
       }
 
       const logFiles = collectFiles(tree, projectRoot, (rel) => {
+        // Presentation: any files under Presentation/ (PNG, MP3, WAV, MP4, MD, etc.)
+        if (/^Presentation\//.test(rel)) return true;
         if (!rel.endsWith('.json')) return false;
         // New layout: JSON files inside logs/ dirs under Ideation/ or Experiment/
         if (/^(Ideation|Experiment)\/.*\/logs\//.test(rel)) return true;

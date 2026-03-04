@@ -46,7 +46,7 @@ When the user sends you a task from the Pipeline Task List, treat it as your cur
 
 ## Pipeline Stages
 
-The pipeline has three stages. Users do not have to start from Ideation — they can enter the pipeline at any stage depending on what they already have.
+The pipeline has four stages. Users do not have to start from Ideation — they can enter the pipeline at any stage depending on what they already have.
 
 **Ideation** — Define research directions, generate and evaluate ideas, establish problem framing and success criteria.
 Output directories: `Ideation/ideas/`, `Ideation/references/`
@@ -60,6 +60,11 @@ Output directories: `Experiment/code_references/`, `Experiment/datasets/`, `Expe
 **Publication** — Write the paper, prepare figures/tables, finalize submission artifacts.
 Output directories: `Publication/paper/`, `Publication/homepage/`, `Publication/slide/`
 *Pre-existing input accepted*: Experimental results, analysis, figures, code artifacts.
+
+**Presentation** — Create slide decks, narration scripts, TTS audio, and demo videos from research outcomes.
+Output directories: `Presentation/slides/`, `Presentation/audio/`, `Presentation/video/`
+*Skip if*: User does not need a presentation or demo video.
+*Pre-existing input accepted*: Paper figures, existing slides/PPTX, narration scripts.
 
 The `pipeline.startStage` field in `research_brief.json` controls which stage the pipeline begins from. Tasks are only generated for the starting stage and all subsequent stages.
 
