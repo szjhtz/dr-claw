@@ -358,6 +358,7 @@ function StageSection({ title, icon: Icon, badgeClass, expanded, onToggle, child
 }
 
 function TaskPipelineBoard({ tasks, isLoading, onNavigateToChat, projectName, onTaskUpdated }) {
+  const { t } = useTranslation('common');
   const [openStages, setOpenStages] = useState({});
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', description: '' });
@@ -546,15 +547,22 @@ function TaskPipelineBoard({ tasks, isLoading, onNavigateToChat, projectName, on
                           const statusMeta = TASK_STATUS_META[task.status] || TASK_STATUS_META.pending;
                           const isFirstPendingTask = task.status === 'pending' && String(task.id) === firstPendingTaskId;
                           const isEditing = editingTaskId === String(task.id);
+                          const cardTone = task.status === 'done'
+                            ? 'border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-900/70 dark:bg-emerald-950/20'
+                            : task.status === 'in-progress'
+                              ? 'border-blue-200/80 bg-blue-50/40 dark:border-blue-900/70 dark:bg-blue-950/20'
+                              : 'border-slate-200/80 bg-slate-50/40 dark:border-slate-800 dark:bg-slate-950/20';
                           return (
                             <div
                               key={`${stage}-${task.id}`}
-                              className={`px-3 py-2 border-b border-border last:border-b-0 ${!isEditing ? 'cursor-pointer hover:bg-muted/30' : ''}`}
+                              className={`mx-2 my-2 rounded-xl border px-3 py-2.5 transition-all ${
+                                isFirstPendingTask && !isEditing ? 'ring-1 ring-emerald-300/60 dark:ring-emerald-700/60' : ''
+                              } ${cardTone} ${!isEditing ? 'cursor-pointer hover:shadow-sm hover:border-cyan-300/70 dark:hover:border-cyan-800/70' : 'border-cyan-400/70 dark:border-cyan-700/70 bg-cyan-50/40 dark:bg-cyan-950/20'}`}
                               onDoubleClick={!isEditing ? () => handleDoubleClick(task) : undefined}
-                              title={!isEditing ? 'Double-click to edit' : undefined}
+                              title={!isEditing ? t('researchLabTaskBoard.doubleClickToEdit') : undefined}
                             >
                               <div className="flex items-start gap-2">
-                                <span className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground mt-0.5">#{task.id}</span>
+                                <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-background/90 border border-border text-muted-foreground mt-0.5">#{task.id}</span>
                                 <div className="min-w-0 flex-1">
                                   {isEditing ? (
                                     <div className="space-y-1.5">
@@ -569,7 +577,7 @@ function TaskPipelineBoard({ tasks, isLoading, onNavigateToChat, projectName, on
                                         }}
                                         disabled={saving}
                                         autoFocus
-                                        placeholder="Task title"
+                                        placeholder={t('researchLabTaskBoard.taskTitlePlaceholder')}
                                       />
                                       <textarea
                                         className="w-full text-xs text-muted-foreground bg-background border border-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-cyan-500 resize-y min-h-[2.5rem]"
@@ -581,7 +589,7 @@ function TaskPipelineBoard({ tasks, isLoading, onNavigateToChat, projectName, on
                                         }}
                                         disabled={saving}
                                         rows={2}
-                                        placeholder="Task description"
+                                        placeholder={t('researchLabTaskBoard.taskDescriptionPlaceholder')}
                                       />
                                       <div className="flex items-center gap-1.5">
                                         <Button
@@ -591,7 +599,7 @@ function TaskPipelineBoard({ tasks, isLoading, onNavigateToChat, projectName, on
                                           disabled={saving}
                                         >
                                           <Check className="w-3 h-3 mr-1" />
-                                          {saving ? 'Saving...' : 'Save'}
+                                          {saving ? t('researchLabTaskBoard.saving') : t('buttons.save')}
                                         </Button>
                                         <Button
                                           variant="ghost"
@@ -600,16 +608,20 @@ function TaskPipelineBoard({ tasks, isLoading, onNavigateToChat, projectName, on
                                           onClick={handleCancel}
                                           disabled={saving}
                                         >
-                                          Cancel
+                                          {t('buttons.cancel')}
                                         </Button>
                                       </div>
                                     </div>
                                   ) : (
                                     <>
-                                      <p className="text-sm font-medium text-foreground truncate">{task.title || 'Untitled Task'}</p>
+                                      <p className="text-sm font-semibold text-foreground line-clamp-2">{task.title || t('researchLabTaskBoard.untitledTask')}</p>
                                       {task.description && (
                                         <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{task.description}</p>
                                       )}
+                                      <p className="text-[10px] text-muted-foreground/80 mt-1 inline-flex items-center gap-1">
+                                        <PenTool className="w-3 h-3" />
+                                        {t('researchLabTaskBoard.editHint')}
+                                      </p>
                                     </>
                                   )}
                                   {!isEditing && Array.isArray(task.suggestedSkills) && task.suggestedSkills.length > 0 && (
@@ -624,7 +636,18 @@ function TaskPipelineBoard({ tasks, isLoading, onNavigateToChat, projectName, on
                                 </div>
                                 {!isEditing && (
                                   <div className="flex flex-col items-end gap-1">
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusMeta.className}`}>{statusMeta.label}</span>
+                                    <div className="flex items-center gap-1">
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusMeta.className}`}>{statusMeta.label}</span>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2 text-[10px] border border-border/70 hover:border-cyan-400/70"
+                                        onClick={() => handleDoubleClick(task)}
+                                      >
+                                        <PenTool className="w-3 h-3 mr-1" />
+                                        {t('buttons.edit')}
+                                      </Button>
+                                    </div>
                                     {isFirstPendingTask && onNavigateToChat && (
                                       <div className="mt-0.5 inline-flex flex-col items-end gap-1">
                                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 animate-pulse">

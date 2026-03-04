@@ -41,6 +41,14 @@
     "briefEditingStep2": "Apply Template + Generate Tasks를 클릭하면 연구 브리프와 작업 목록이 함께 갱신됩니다.",
     "briefEditingStep3": "아래 Pipeline Task List에서 Use in Chat을 순서대로 실행하고, 정리된 결론을 연구 브리프에 계속 반영하세요."
   },
+  "researchLabTaskBoard": {
+    "doubleClickToEdit": "더블클릭하여 편집",
+    "taskTitlePlaceholder": "작업 제목",
+    "taskDescriptionPlaceholder": "작업 설명",
+    "saving": "저장 중...",
+    "untitledTask": "제목 없는 작업",
+    "editHint": "작업 카드를 더블클릭하거나 편집 버튼을 사용하세요"
+  },
   "status": {
     "loading": "로딩 중...",
     "success": "성공",

@@ -41,6 +41,14 @@
     "briefEditingStep2": "Click Apply Template + Generate Tasks to update the research brief and regenerate the task list.",
     "briefEditingStep3": "Use Use in Chat from the Pipeline Task List below in sequence, and keep writing clarified conclusions back to the research brief."
   },
+  "researchLabTaskBoard": {
+    "doubleClickToEdit": "Double-click to edit",
+    "taskTitlePlaceholder": "Task title",
+    "taskDescriptionPlaceholder": "Task description",
+    "saving": "Saving...",
+    "untitledTask": "Untitled Task",
+    "editHint": "Double-click task card or use Edit button"
+  },
   "status": {
     "loading": "Loading...",
     "success": "Success",

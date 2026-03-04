@@ -41,6 +41,14 @@
     "briefEditingStep2": "点击 Apply Template + Generate Tasks，会更新研究简报并据此生成/刷新任务列表。",
     "briefEditingStep3": "在下方 Pipeline Task List 中使用 Use in Chat 按顺序执行任务，并把澄清后的结论持续回写到研究简报。"
   },
+  "researchLabTaskBoard": {
+    "doubleClickToEdit": "双击可编辑",
+    "taskTitlePlaceholder": "任务标题",
+    "taskDescriptionPlaceholder": "任务描述",
+    "saving": "保存中...",
+    "untitledTask": "未命名任务",
+    "editHint": "双击任务卡片或使用编辑按钮"
+  },
   "status": {
     "loading": "加载中...",
     "success": "成功",
