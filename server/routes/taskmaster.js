@@ -23,18 +23,19 @@ const LEGACY_TASKMASTER_DIR = '.taskmaster';
 const DEFAULT_TASKS_TAG = 'master';
 const DEFAULT_RESEARCH_BRIEF_FILENAME = 'research_brief.json';
 const DEFAULT_MAX_TASKS = 30;
-const STAGE_ORDER = ['ideation', 'experiment', 'publication', 'presentation'];
+const STAGE_ORDER = ['ideation', 'experiment', 'publication', 'promotion'];
 const STAGE_LABELS = {
     ideation: 'Ideation',
     experiment: 'Experiment',
     publication: 'Publication',
-    presentation: 'Presentation',
+    promotion: 'Promotion',
+    presentation: 'Promotion',
 };
 const STAGE_PROMPT_HINTS = {
     ideation: 'Clarify thesis, scope boundaries, and evidence framing before execution.',
     experiment: 'Turn assumptions into an executable protocol with measurable validation criteria.',
     publication: 'Convert outcomes into a coherent manuscript narrative with concrete submission artifacts.',
-    presentation: 'Transform research outcomes into visual slides, narration scripts, and demo videos.',
+    promotion: 'Transform research outcomes into homepage assets, visual slides, narration scripts, and demo videos.',
 };
 const DEFAULT_STAGE_SKILL_MAP = {
     ideation: {
@@ -59,12 +60,13 @@ const DEFAULT_STAGE_SKILL_MAP = {
             analysis: ['inno-reference-audit'],
         },
     },
-    presentation: {
+    promotion: {
         base: ['making-academic-presentations'],
         byTaskType: {
             scripting: ['making-academic-presentations'],
             rendering: ['making-academic-presentations'],
             narration: ['making-academic-presentations'],
+            delivery: ['making-academic-presentations'],
         },
     },
 };
@@ -87,11 +89,12 @@ const DEFAULT_BRIEF_SECTIONS = {
         artifact_plan: '',
         submission_checklist: [],
     },
-    presentation: {
+    promotion: {
         slide_outline: '',
         deck_style: '',
         tts_config: '',
         video_assembly_plan: '',
+        homepage_plan: '',
     },
 };
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -102,7 +105,9 @@ let cachedStageSkillMapMtimeMs = null;
 function normalizeStageSkillMap(rawMap = {}) {
     const normalized = {};
     STAGE_ORDER.forEach((stage) => {
-        const source = rawMap?.[stage] || {};
+        const source = rawMap?.[stage]
+            || (stage === 'promotion' ? rawMap?.presentation : null)
+            || {};
         normalized[stage] = {
             base: Array.isArray(source.base) ? source.base.map((item) => String(item || '').trim()).filter(Boolean) : [],
             byTaskType: source.byTaskType && typeof source.byTaskType === 'object'
@@ -238,40 +243,47 @@ function buildDefaultBriefPipeline(stageSkillMap) {
                 ],
                 recommended_skills: map.publication.base,
             },
-            presentation: {
+            promotion: {
                 required_elements: [
-                    'sections.presentation.slide_outline',
+                    'sections.promotion.slide_outline',
                 ],
                 optional_elements: [
-                    'sections.presentation.deck_style',
-                    'sections.presentation.tts_config',
-                    'sections.presentation.video_assembly_plan',
+                    'sections.promotion.deck_style',
+                    'sections.promotion.tts_config',
+                    'sections.promotion.video_assembly_plan',
+                    'sections.promotion.homepage_plan',
                 ],
                 quality_gate: [
-                    'Slide outline covers key paper contributions',
+                    'Slide outline and homepage plan cover key paper contributions',
                     'Deck style defined for visual consistency',
                 ],
                 task_blueprints: [
                     {
-                        id: 'presentation_draft_outline',
+                        id: 'promotion_draft_outline',
                         title: 'Draft slide outline and narration scripts',
                         description: 'Create per-slide content plan with talking points based on paper contributions.',
                         taskType: 'scripting',
                     },
                     {
-                        id: 'presentation_generate_slides',
+                        id: 'promotion_prepare_homepage',
+                        title: 'Prepare research homepage content and assets',
+                        description: 'Organize homepage sections, key visuals, and links for project promotion.',
+                        taskType: 'delivery',
+                    },
+                    {
+                        id: 'promotion_generate_slides',
                         title: 'Generate slide images from outline and paper figures',
                         description: 'Use nanobanana to render slide images, preferring /edit on existing HQ paper figures.',
                         taskType: 'rendering',
                     },
                     {
-                        id: 'presentation_generate_narration',
+                        id: 'promotion_generate_narration',
                         title: 'Generate TTS audio for slide narration',
                         description: 'Generate one audio file per slide using edge-tts (default), Kokoro (offline), or ElevenLabs (premium).',
                         taskType: 'narration',
                     },
                 ],
-                recommended_skills: map.presentation?.base || ['making-academic-presentations'],
+                recommended_skills: map.promotion?.base || map.presentation?.base || ['making-academic-presentations'],
             },
         },
     };
@@ -464,7 +476,7 @@ function buildFallbackTaskCandidates(briefData = {}) {
         `Finalize Ideation section${target}: clarify research goal, framing, and evidence plan.`,
         `Define Experiment section${target}: specify validation goal, protocol, and evaluation plan.`,
         `Prepare Publication section${target}: draft paper outline, figures/tables plan, and submission checklist.`,
-        `Create Presentation section${target}: draft slide outline, deck style, TTS config, and video assembly plan.`,
+        `Create Promotion section${target}: draft homepage plan, slide outline, deck style, TTS config, and video assembly plan.`,
     ];
 }
 
@@ -481,15 +493,16 @@ function buildPipelineSkeletonCandidates(briefData = {}) {
         `Publication: draft paper outline and contribution boundaries${target}.`,
         `Publication: prepare figures/tables and artifact appendix${target}.`,
         `Publication: complete submission checklist and final review${target}.`,
-        `Presentation: draft slide outline and narration scripts${target}.`,
-        `Presentation: generate slide images from paper figures${target}.`,
-        `Presentation: generate TTS audio and assemble demo video${target}.`,
+        `Promotion: prepare project homepage structure and assets${target}.`,
+        `Promotion: draft slide outline and narration scripts${target}.`,
+        `Promotion: generate slide images from paper figures${target}.`,
+        `Promotion: generate TTS audio and assemble demo video${target}.`,
     ];
 }
 
 function parseBriefJsonToTaskCandidates(briefData = {}) {
     const candidates = [];
-    const sectionOrder = ['ideation', 'experiment', 'publication', 'presentation'];
+    const sectionOrder = ['ideation', 'experiment', 'publication', 'promotion', 'presentation'];
     const sectionData = briefData?.sections && typeof briefData.sections === 'object'
         ? briefData.sections
         : {};
@@ -521,13 +534,21 @@ function inferStageFromCandidate(text = '') {
     if (value.includes('ideation')) return 'ideation';
     if (value.includes('experiment') || value.includes('validation') || value.includes('baseline')) return 'experiment';
     if (value.includes('publication') || value.includes('paper') || value.includes('submission')) return 'publication';
-    if (value.includes('presentation') || value.includes('slide') || value.includes('deck') || value.includes('demo video')) return 'presentation';
+    if (
+        value.includes('promotion')
+        || value.includes('presentation')
+        || value.includes('slide')
+        || value.includes('deck')
+        || value.includes('demo video')
+        || value.includes('homepage')
+    ) return 'promotion';
     return null;
 }
 
 function normalizeStageName(stage) {
     const value = String(stage || '').trim().toLowerCase();
-    if (value === 'ideation' || value === 'experiment' || value === 'publication' || value === 'presentation') {
+    if (value === 'presentation') return 'promotion';
+    if (value === 'ideation' || value === 'experiment' || value === 'publication' || value === 'promotion') {
         return value;
     }
     return null;
@@ -692,12 +713,13 @@ function instantiatePipelineTasksFromBrief(briefData = {}, numTasks = DEFAULT_MA
     const maxTasks = Number.isFinite(Number(numTasks)) && Number(numTasks) > 0 ? Number(numTasks) : DEFAULT_MAX_TASKS;
 
     // Respect pipeline.startStage — only generate tasks for stages >= startStage
-    const startStage = briefData?.pipeline?.startStage || 'ideation';
+    const startStage = normalizeStageName(briefData?.pipeline?.startStage) || 'ideation';
     const startIdx = STAGE_ORDER.indexOf(startStage);
     const activeStages = startIdx > 0 ? STAGE_ORDER.slice(startIdx) : STAGE_ORDER;
 
     for (const stage of activeStages) {
-        const stageConfig = pipelineStages?.[stage];
+        const stageConfig = pipelineStages?.[stage]
+            || (stage === 'promotion' ? pipelineStages?.presentation : null);
         if (!stageConfig || typeof stageConfig !== 'object') continue;
 
         const stageSkills = resolveTaskSkills(stage, '', stageConfig.recommended_skills, []);

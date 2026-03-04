@@ -250,7 +250,7 @@
       "paperWriting": "Paper Writing",
       "paperReview": "Paper Review",
       "grantWriting": "Grant Writing",
-      "presentation": "Presentation"
+      "promotion": "Promotion"
     },
     "promptSingle": "Please use the {{skill}} skill to help me with this task.\n\nDescribe your task here:",
     "promptMulti": "Please use the following skills for this task: {{skills}}.\n\nDescribe your research task here:"
