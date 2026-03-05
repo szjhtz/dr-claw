@@ -32,12 +32,14 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Auth wall is disabled — always treat the user as logged in.
-    setUser({ username: 'default' });
-    setNeedsSetup(false);
-    checkOnboardingStatus();
-    setIsLoading(false);
-  }, []);
+    checkAuthStatus();
+  }, [token]);
+
+  useEffect(() => {
+    if (!user) {
+      setHasCompletedOnboarding(true);
+    }
+  }, [user]);
 
   const checkOnboardingStatus = async () => {
     try {
@@ -67,9 +69,12 @@ export const AuthProvider = ({ children }) => {
 
       if (statusData.needsSetup) {
         setNeedsSetup(true);
+        setUser(null);
         setIsLoading(false);
         return;
       }
+
+      setNeedsSetup(false);
 
       // If we have a token, verify it
       if (token) {
@@ -93,6 +98,8 @@ export const AuthProvider = ({ children }) => {
           setToken(null);
           setUser(null);
         }
+      } else {
+        setUser(null);
       }
     } catch (error) {
       console.error('[AuthContext] Auth status check failed:', error);

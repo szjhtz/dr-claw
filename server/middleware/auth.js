@@ -20,19 +20,37 @@ const validateApiKey = (req, res, next) => {
 };
 
 // JWT authentication middleware
-// Auth wall is disabled — always use the single default user.
 const authenticateToken = async (req, res, next) => {
   try {
-    let user = userDb.getFirstUser();
-    if (!user) {
-      // Auto-create a default user on first access
-      user = ensureDefaultUser();
+    if (IS_PLATFORM) {
+      const user = userDb.getFirstUser();
+      if (!user) {
+        return res.status(401).json({ error: 'No authenticated user found' });
+      }
+      req.user = user;
+      return next();
     }
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : null;
+
+    if (!token) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = userDb.getUserById(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found or inactive' });
+    }
+
     req.user = user;
     return next();
   } catch (error) {
     console.error('Auth middleware error:', error);
-    return res.status(500).json({ error: 'Failed to resolve user' });
+    return res.status(401).json({ error: 'Invalid or expired token' });
   }
 };
 
@@ -48,23 +66,24 @@ const generateToken = (user) => {
   );
 };
 
-// Auto-create a default user if the database is empty
-function ensureDefaultUser() {
-  const placeholder = '$2b$12$placeholder.hash.not.used.for.login';
-  const created = userDb.createUser('default', placeholder);
-  // Mark onboarding as complete so the user goes straight to the app
-  userDb.completeOnboarding(created.id);
-  return userDb.getUserById(created.id);
-}
-
 // WebSocket authentication function
-// Auth wall is disabled — always return the default user.
-const authenticateWebSocket = (_token) => {
+const authenticateWebSocket = (token) => {
   try {
-    let user = userDb.getFirstUser();
-    if (!user) {
-      user = ensureDefaultUser();
+    if (IS_PLATFORM) {
+      const user = userDb.getFirstUser();
+      return user ? { userId: user.id, username: user.username } : null;
     }
+
+    if (!token) {
+      return null;
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = userDb.getUserById(decoded.userId);
+    if (!user) {
+      return null;
+    }
+
     return { userId: user.id, username: user.username };
   } catch (error) {
     console.error('WebSocket auth error:', error);

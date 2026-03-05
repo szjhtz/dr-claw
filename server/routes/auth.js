@@ -5,11 +5,11 @@ import { generateToken, authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Check auth status — auth wall is disabled, never require setup
+// Check auth status
 router.get('/status', async (req, res) => {
   res.json({
-    needsSetup: false,
-    isAuthenticated: true
+    needsSetup: !userDb.hasUsers(),
+    isAuthenticated: false
   });
 });
 

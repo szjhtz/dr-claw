@@ -331,10 +331,13 @@ function shouldAutoOpenUrlFromOutput(value = '') {
 const wss = new WebSocketServer({
     server,
     verifyClient: (info) => {
-        // Auth wall disabled — always allow and attach default user
-        const user = authenticateWebSocket(null);
+        const authHeader = info.req.headers.authorization || '';
+        const tokenFromHeader = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+        const requestUrl = new URL(info.req.url || '/', 'http://localhost');
+        const token = tokenFromHeader || requestUrl.searchParams.get('token');
+        const user = authenticateWebSocket(token);
         if (!user) {
-            console.log('[WARN] No user found in database for WebSocket');
+            console.log('[WARN] WebSocket authentication failed');
             return false;
         }
         info.req.user = user;

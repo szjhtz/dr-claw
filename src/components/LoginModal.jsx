@@ -31,13 +31,21 @@ function LoginModal({
 
     switch (provider) {
       case 'claude':
-        return isAuthenticated ? 'claude setup-token --dangerously-skip-permissions' : isOnboarding ? 'claude /exit --dangerously-skip-permissions' : 'claude /login --dangerously-skip-permissions';
+        return isAuthenticated
+          ? 'claude --dangerously-skip-permissions setup-token'
+          : isOnboarding
+            ? 'claude --dangerously-skip-permissions /exit'
+            : 'claude --dangerously-skip-permissions /login';
       case 'cursor':
         return 'agent login';
       case 'codex':
         return IS_PLATFORM ? 'codex login --device-auth' : 'codex login';
       default:
-        return isAuthenticated ? 'claude setup-token --dangerously-skip-permissions' : isOnboarding ? 'claude /exit --dangerously-skip-permissions' : 'claude /login --dangerously-skip-permissions';
+        return isAuthenticated
+          ? 'claude --dangerously-skip-permissions setup-token'
+          : isOnboarding
+            ? 'claude --dangerously-skip-permissions /exit'
+            : 'claude --dangerously-skip-permissions /login';
     }
   };
 

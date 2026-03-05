@@ -26,13 +26,20 @@ const LoadingScreen = () => (
 );
 
 const ProtectedRoute = ({ children }) => {
-  const { isLoading, hasCompletedOnboarding, refreshOnboardingStatus } = useAuth();
+  const { isLoading, needsSetup, user, hasCompletedOnboarding, refreshOnboardingStatus } = useAuth();
 
   if (isLoading) {
     return <LoadingScreen />;
   }
 
-  // Auth wall is disabled — skip login/setup, only keep onboarding
+  if (needsSetup) {
+    return <SetupForm />;
+  }
+
+  if (!user) {
+    return <LoginForm />;
+  }
+
   if (!hasCompletedOnboarding) {
     return <Onboarding onComplete={refreshOnboardingStatus} />;
   }
