@@ -12,8 +12,10 @@ export interface StandaloneItem {
 
 export interface AgentTurnItem {
   kind: 'agent-turn';
-  finalMessage: ChatMessage | null;
+  textMessages: ChatMessage[];
   intermediateMessages: ChatMessage[];
+  /** All messages in original order (used for streaming flat view) */
+  allMessages: ChatMessage[];
   toolCount: number;
   toolNames: string[];
   isActivelyStreaming: boolean;
@@ -24,8 +26,8 @@ export type GroupedItem = UserItem | StandaloneItem | AgentTurnItem;
 /**
  * Groups chat messages into agent turns.
  * Messages between two user messages form a single agent turn.
- * The last text-only assistant message in a turn is the "final" message shown directly;
- * everything else is intermediate (collapsed by default).
+ * All pure-text assistant messages are extracted as `textMessages` and shown directly;
+ * tool calls and thinking are `intermediateMessages` (collapsed by default).
  */
 export function groupMessagesIntoTurns(
   messages: ChatMessage[],
@@ -39,19 +41,18 @@ export function groupMessagesIntoTurns(
 
     const activelyStreaming = isLastTurn && isLoading;
 
-    // Find the last assistant message that is pure text (not tool use, not thinking-only)
-    let finalIndex = -1;
-    for (let i = currentTurnMessages.length - 1; i >= 0; i--) {
-      const msg = currentTurnMessages[i];
-      if (
-        msg.type === 'assistant' &&
-        !msg.isToolUse &&
-        !msg.isThinking &&
-        msg.content &&
-        msg.content.trim().length > 0
-      ) {
-        finalIndex = i;
-        break;
+    // Find all assistant messages that are pure text (not tool use, not thinking-only)
+    const isTextMessage = (msg: ChatMessage) =>
+      msg.type === 'assistant' &&
+      !msg.isToolUse &&
+      !msg.isThinking &&
+      msg.content &&
+      msg.content.trim().length > 0;
+
+    const textIndices = new Set<number>();
+    for (let i = 0; i < currentTurnMessages.length; i++) {
+      if (isTextMessage(currentTurnMessages[i])) {
+        textIndices.add(i);
       }
     }
 
@@ -69,10 +70,10 @@ export function groupMessagesIntoTurns(
       }
     }
 
-    // If there's only one message and it's the final text message, standalone
+    // If there's only one message and it's a text message, standalone
     if (
       currentTurnMessages.length === 1 &&
-      finalIndex === 0 &&
+      textIndices.has(0) &&
       toolCount === 0
     ) {
       items.push({ kind: 'standalone', message: currentTurnMessages[0] });
@@ -80,16 +81,14 @@ export function groupMessagesIntoTurns(
       return;
     }
 
-    const finalMessage = finalIndex >= 0 ? currentTurnMessages[finalIndex] : null;
-    const intermediateMessages =
-      finalIndex >= 0
-        ? currentTurnMessages.filter((_, i) => i !== finalIndex)
-        : [...currentTurnMessages];
+    const textMessages = currentTurnMessages.filter((_, i) => textIndices.has(i));
+    const intermediateMessages = currentTurnMessages.filter((_, i) => !textIndices.has(i));
 
     items.push({
       kind: 'agent-turn',
-      finalMessage,
+      textMessages,
       intermediateMessages,
+      allMessages: [...currentTurnMessages],
       toolCount,
       toolNames,
       isActivelyStreaming: activelyStreaming,

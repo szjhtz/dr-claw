@@ -107,6 +107,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ filePath, content }),
     }),
+  deleteFile: (projectName, filePath) =>
+    authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/file`, {
+      method: 'DELETE',
+      body: JSON.stringify({ filePath }),
+    }),
   getFiles: (projectName, options = {}) => {
     const { path, maxDepth, showHidden, ...fetchOptions } = options || {};
     const params = new URLSearchParams();
@@ -223,6 +228,12 @@ export const api = {
     authenticatedFetch('/api/skills/file', {
       method: 'PUT',
       body: JSON.stringify({ filePath, content }),
+    }),
+  uploadFiles: (projectName, formData) =>
+    authenticatedFetch(`/api/projects/${encodeURIComponent(projectName)}/upload-files`, {
+      method: 'POST',
+      body: formData,
+      headers: {}, // Let browser set multipart boundary
     }),
   validateSkillZip: (projectName, formData) =>
     authenticatedFetch(`/api/skills/${projectName}/validate-skill-zip`, {

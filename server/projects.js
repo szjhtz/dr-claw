@@ -423,6 +423,10 @@ async function getProjects(progressCallback = null) {
   const config = await loadProjectConfig();
   const projects = [];
   const existingProjects = new Set();
+
+  // Resolve workspace root for filtering (config > env var > ~/vibelab)
+  const DEFAULT_WORKSPACES_ROOT = path.join(os.homedir(), 'vibelab');
+  const workspacesRoot = config._workspacesRoot || process.env.WORKSPACES_ROOT || DEFAULT_WORKSPACES_ROOT;
   const codexSessionsIndexRef = { sessionsByProject: null };
   let totalProjects = 0;
   let processedProjects = 0;
@@ -437,8 +441,15 @@ async function getProjects(progressCallback = null) {
     const entries = await fs.readdir(claudeDir, { withFileTypes: true });
     directories = entries.filter(e => e.isDirectory());
 
-    // Build set of existing project names for later
-    directories.forEach(e => existingProjects.add(e.name));
+    // Pre-filter directories by workspace root
+    const filteredDirectories = [];
+    for (const entry of directories) {
+      const actualDir = await extractProjectDirectory(entry.name);
+      if (actualDir && actualDir.startsWith(workspacesRoot)) {
+        filteredDirectories.push({ entry, actualProjectDir: actualDir });
+      }
+      existingProjects.add(entry.name);
+    }
 
     // Heal config entries whose originalPath points at a different project key.
     for (const [projectName, projectConfig] of Object.entries(config)) {
@@ -463,11 +474,15 @@ async function getProjects(progressCallback = null) {
     // Count manual projects not already in directories
     const manualProjectsCount = Object.entries(config)
       .filter(([name, cfg]) => cfg.manuallyAdded && !existingProjects.has(name))
+      .filter(([name, cfg]) => {
+        const dir = cfg.originalPath || name.replace(/-/g, '/');
+        return dir && dir.startsWith(workspacesRoot);
+      })
       .length;
 
-    totalProjects = directories.length + manualProjectsCount;
+    totalProjects = filteredDirectories.length + manualProjectsCount;
 
-    for (const entry of directories) {
+    for (const { entry, actualProjectDir } of filteredDirectories) {
         processedProjects++;
 
         // Emit progress
@@ -479,9 +494,6 @@ async function getProjects(progressCallback = null) {
             currentProject: entry.name
           });
         }
-
-        // Extract actual project directory from JSONL sessions
-        const actualProjectDir = await extractProjectDirectory(entry.name);
 
         // Get display name from config or generate one
         const customName = config[entry.name]?.displayName;
@@ -573,24 +585,16 @@ async function getProjects(progressCallback = null) {
     // Calculate total for manual projects only (no directories exist)
     totalProjects = Object.entries(config)
       .filter(([name, cfg]) => cfg.manuallyAdded)
+      .filter(([name, cfg]) => {
+        const dir = cfg.originalPath || name.replace(/-/g, '/');
+        return dir && dir.startsWith(workspacesRoot);
+      })
       .length;
   }
 
   // Add manually configured projects that don't exist as folders yet
   for (const [projectName, projectConfig] of Object.entries(config)) {
     if (!existingProjects.has(projectName) && projectConfig.manuallyAdded) {
-      processedProjects++;
-
-      // Emit progress for manual projects
-      if (progressCallback) {
-        progressCallback({
-          phase: 'loading',
-          current: processedProjects,
-          total: totalProjects,
-          currentProject: projectName
-        });
-      }
-
       // Use the original path if available, otherwise extract from potential sessions
       let actualProjectDir = projectConfig.originalPath;
 
@@ -601,6 +605,23 @@ async function getProjects(progressCallback = null) {
           // Fall back to decoded project name
           actualProjectDir = projectName.replace(/-/g, '/');
         }
+      }
+
+      // Skip projects outside the workspace root
+      if (!actualProjectDir || !actualProjectDir.startsWith(workspacesRoot)) {
+        continue;
+      }
+
+      processedProjects++;
+
+      // Emit progress for manual projects
+      if (progressCallback) {
+        progressCallback({
+          phase: 'loading',
+          current: processedProjects,
+          total: totalProjects,
+          currentProject: projectName
+        });
       }
 
       // Skip projects whose folder has been deleted from disk and clean up config

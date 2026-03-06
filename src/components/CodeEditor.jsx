@@ -175,6 +175,10 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
     return ext === 'md' || ext === 'markdown';
   }, [file.name]);
 
+  // Check if file is PDF
+  const isPdf = useMemo(() => file.name.toLowerCase().endsWith('.pdf'), [file.name]);
+  const [pdfUrl, setPdfUrl] = useState(null);
+
   // Create minimap extension with chunk-based gutters
   const minimapExtension = useMemo(() => {
     if (!file.diffInfo || !showDiff || !minimapEnabled) return [];
@@ -435,6 +439,15 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
       try {
         setLoading(true);
 
+        // PDF files: fetch as blob and create object URL
+        if (isPdf) {
+          const blob = await api.getFileContentBlob(file.projectName, file.path);
+          const url = URL.createObjectURL(blob);
+          setPdfUrl(url);
+          setLoading(false);
+          return;
+        }
+
         // If we have diffInfo with both old and new content, we can show the diff directly
         // This handles both GitPanel (full content) and ChatInterface (full content from API)
         if (file.diffInfo && file.diffInfo.new_string !== undefined && file.diffInfo.old_string !== undefined) {
@@ -463,7 +476,11 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
     };
 
     loadFileContent();
-  }, [file, projectPath]);
+
+    return () => {
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    };
+  }, [file, projectPath, isPdf]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -730,7 +747,7 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
           </div>
 
           <div className="flex items-center gap-0.5 md:gap-1 flex-shrink-0">
-            {isMarkdownFile && (
+            {!isPdf && isMarkdownFile && (
               <button
                 onClick={() => setMarkdownPreview(!markdownPreview)}
                 className={`p-1.5 rounded-md min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center justify-center transition-colors ${
@@ -744,13 +761,15 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
               </button>
             )}
 
-            <button
-              onClick={() => window.openSettings?.('appearance')}
-              className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center justify-center"
-              title={t('toolbar.settings')}
-            >
-              <SettingsIcon className="w-4 h-4" />
-            </button>
+            {!isPdf && (
+              <button
+                onClick={() => window.openSettings?.('appearance')}
+                className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center justify-center"
+                title={t('toolbar.settings')}
+              >
+                <SettingsIcon className="w-4 h-4" />
+              </button>
+            )}
 
             <button
               onClick={handleDownload}
@@ -760,24 +779,26 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
               <Download className="w-4 h-4" />
             </button>
 
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className={`p-1.5 rounded-md disabled:opacity-50 flex items-center justify-center transition-colors min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 ${
-                saveSuccess
-                  ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
-              }`}
-              title={saveSuccess ? t('actions.saved') : saving ? t('actions.saving') : t('actions.save')}
-            >
-              {saveSuccess ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-            </button>
+            {!isPdf && (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className={`p-1.5 rounded-md disabled:opacity-50 flex items-center justify-center transition-colors min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 ${
+                  saveSuccess
+                    ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
+                title={saveSuccess ? t('actions.saved') : saving ? t('actions.saving') : t('actions.save')}
+              >
+                {saveSuccess ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+              </button>
+            )}
 
             {!isSidebar && (
               <button
@@ -799,9 +820,11 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
           </div>
         </div>
 
-        {/* Editor / Markdown Preview */}
+        {/* Editor / Markdown Preview / PDF Preview */}
         <div className="flex-1 overflow-hidden">
-          {markdownPreview && isMarkdownFile ? (
+          {isPdf && pdfUrl ? (
+            <iframe src={pdfUrl} className="w-full h-full border-0" title={file.name} />
+          ) : markdownPreview && isMarkdownFile ? (
             <div className="h-full overflow-y-auto bg-white dark:bg-gray-900">
               <div className="max-w-4xl mx-auto px-8 py-6 prose prose-sm dark:prose-invert prose-headings:font-semibold prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-code:text-sm prose-pre:bg-gray-900 prose-img:rounded-lg max-w-none">
                 <MarkdownPreview content={content} />
@@ -856,16 +879,18 @@ function CodeEditor({ file, onClose, projectPath, isSidebar = false, isExpanded 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-3 py-1.5 border-t border-border bg-muted flex-shrink-0">
-          <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
-            <span>{t('footer.lines')} {content.split('\n').length}</span>
-            <span>{t('footer.characters')} {content.length}</span>
-          </div>
+        {!isPdf && (
+          <div className="flex items-center justify-between px-3 py-1.5 border-t border-border bg-muted flex-shrink-0">
+            <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
+              <span>{t('footer.lines')} {content.split('\n').length}</span>
+              <span>{t('footer.characters')} {content.length}</span>
+            </div>
 
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            {t('footer.shortcuts')}
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {t('footer.shortcuts')}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
     </>

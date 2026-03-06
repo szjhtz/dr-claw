@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import {
   Folder, FolderOpen, File, FileText, FileCode, List, TableProperties, Eye, Search, X,
-  ChevronRight,
+  ChevronRight, UploadCloud, Loader2, Trash2, Copy, Check,
   FileJson, FileType, FileSpreadsheet, FileArchive,
   Hash, Braces, Terminal, Database, Globe, Palette, Music2, Video, Archive,
   Lock, Shield, Settings, Image, BookOpen, Cpu, Box, Gem, Coffee,
@@ -268,6 +268,81 @@ function FileTree({ selectedProject, onFileOpen }) {
   const [viewMode, setViewMode] = useState('detailed');
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredFiles, setFilteredFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [uploadSuccess, setUploadSuccess] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [dragOverDir, setDragOverDir] = useState(null);
+  const [copiedPath, setCopiedPath] = useState(null);
+  const uploadTargetDirRef = useRef('');
+  const fileInputRef = useRef(null);
+
+  const handleUpload = useCallback(async (fileList, targetDir = '') => {
+    if (!fileList.length || !selectedProject) return;
+    setUploading(true);
+    setUploadError(null);
+    setUploadSuccess(null);
+    try {
+      const formData = new FormData();
+      formData.append('targetDir', targetDir);
+      fileList.forEach(f => formData.append('files', f));
+      const res = await api.uploadFiles(selectedProject.name, formData);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Upload failed (${res.status})`);
+      }
+      const data = await res.json();
+      setUploadSuccess(t('fileTree.uploadSuccess', { count: data.files.length }));
+      setTimeout(() => setUploadSuccess(null), 3000);
+      fetchFiles();
+    } catch (err) {
+      setUploadError(err.message);
+      setTimeout(() => setUploadError(null), 5000);
+    } finally {
+      setUploading(false);
+    }
+  }, [selectedProject]);
+
+  const handleFileInputChange = useCallback((e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) handleUpload(files, uploadTargetDirRef.current);
+    e.target.value = '';
+  }, [handleUpload]);
+
+  const handleFileDrop = useCallback((e, targetDir) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverDir(null);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) handleUpload(files, targetDir);
+  }, [handleUpload]);
+
+  const handleCopyPath = (e, item) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(item.path).then(() => {
+      setCopiedPath(item.path);
+      setTimeout(() => setCopiedPath(null), 2000);
+    });
+  };
+
+  const handleDelete = useCallback(async (item) => {
+    if (!selectedProject) return;
+    const confirmed = window.confirm(t('fileTree.confirmDelete', { name: item.name }));
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      const res = await api.deleteFile(selectedProject.name, item.path);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Delete failed (${res.status})`);
+      }
+      fetchFiles();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedProject, t]);
 
   useEffect(() => {
     if (selectedProject) {
@@ -465,16 +540,49 @@ function FileTree({ selectedProject, onFileOpen }) {
               isDir && isOpen && 'border-l-2 border-primary/30',
               isDir && !isOpen && 'border-l-2 border-transparent',
               !isDir && 'border-l-2 border-transparent',
+              isDir && dragOverDir === item.path && 'bg-primary/10 ring-1 ring-primary/40',
             )}
             style={{ paddingLeft: `${level * 16 + 4}px` }}
             onClick={() => handleItemClick(item)}
+            {...(isDir ? {
+              onDragOver: (e) => { e.preventDefault(); e.stopPropagation(); setDragOverDir(item.path); },
+              onDragLeave: (e) => { e.stopPropagation(); setDragOverDir(null); },
+              onDrop: (e) => handleFileDrop(e, item.path),
+            } : {})}
           >
             {renderItemIcons(item)}
             <span className={cn(
-              'text-[13px] leading-tight truncate',
+              'text-[13px] leading-tight truncate flex-1',
               isDir ? 'font-medium text-foreground' : 'text-foreground/90'
             )}>
               {item.name}
+            </span>
+            <span className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              {isDir && (
+                <button
+                  className="p-0.5 rounded hover:bg-accent"
+                  title={t('fileTree.uploadToFolder')}
+                  onClick={(e) => { e.stopPropagation(); uploadTargetDirRef.current = item.path; fileInputRef.current?.click(); }}
+                >
+                  <UploadCloud className="w-3.5 h-3.5 text-muted-foreground" />
+                </button>
+              )}
+              <button
+                className="p-0.5 rounded hover:bg-accent"
+                title={t('fileTree.copyPath')}
+                onClick={(e) => handleCopyPath(e, item)}
+              >
+                {copiedPath === item.path
+                  ? <Check className="w-3.5 h-3.5 text-green-500" />
+                  : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
+              </button>
+              <button
+                className="p-0.5 rounded hover:bg-destructive/20"
+                title={t('fileTree.deleteFile')}
+                onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
+              >
+                <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+              </button>
             </span>
           </div>
 
@@ -507,17 +615,50 @@ function FileTree({ selectedProject, onFileOpen }) {
               isDir && isOpen && 'border-l-2 border-primary/30',
               isDir && !isOpen && 'border-l-2 border-transparent',
               !isDir && 'border-l-2 border-transparent',
+              isDir && dragOverDir === item.path && 'bg-primary/10 ring-1 ring-primary/40',
             )}
             style={{ paddingLeft: `${level * 16 + 4}px` }}
             onClick={() => handleItemClick(item)}
+            {...(isDir ? {
+              onDragOver: (e) => { e.preventDefault(); e.stopPropagation(); setDragOverDir(item.path); },
+              onDragLeave: (e) => { e.stopPropagation(); setDragOverDir(null); },
+              onDrop: (e) => handleFileDrop(e, item.path),
+            } : {})}
           >
             <div className="col-span-5 flex items-center gap-1.5 min-w-0">
               {renderItemIcons(item)}
               <span className={cn(
-                'text-[13px] leading-tight truncate',
+                'text-[13px] leading-tight truncate flex-1',
                 isDir ? 'font-medium text-foreground' : 'text-foreground/90'
               )}>
                 {item.name}
+              </span>
+              <span className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                {isDir && (
+                  <button
+                    className="p-0.5 rounded hover:bg-accent"
+                    title={t('fileTree.uploadToFolder')}
+                    onClick={(e) => { e.stopPropagation(); uploadTargetDirRef.current = item.path; fileInputRef.current?.click(); }}
+                  >
+                    <UploadCloud className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                )}
+                <button
+                  className="p-0.5 rounded hover:bg-accent"
+                  title={t('fileTree.copyPath')}
+                  onClick={(e) => handleCopyPath(e, item)}
+                >
+                  {copiedPath === item.path
+                    ? <Check className="w-3.5 h-3.5 text-green-500" />
+                    : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
+                </button>
+                <button
+                  className="p-0.5 rounded hover:bg-destructive/20"
+                  title={t('fileTree.deleteFile')}
+                  onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+                </button>
               </span>
             </div>
             <div className="col-span-2 text-xs text-muted-foreground tabular-nums">
@@ -560,11 +701,17 @@ function FileTree({ selectedProject, onFileOpen }) {
               isDir && isOpen && 'border-l-2 border-primary/30',
               isDir && !isOpen && 'border-l-2 border-transparent',
               !isDir && 'border-l-2 border-transparent',
+              isDir && dragOverDir === item.path && 'bg-primary/10 ring-1 ring-primary/40',
             )}
             style={{ paddingLeft: `${level * 16 + 4}px` }}
             onClick={() => handleItemClick(item)}
+            {...(isDir ? {
+              onDragOver: (e) => { e.preventDefault(); e.stopPropagation(); setDragOverDir(item.path); },
+              onDragLeave: (e) => { e.stopPropagation(); setDragOverDir(null); },
+              onDrop: (e) => handleFileDrop(e, item.path),
+            } : {})}
           >
-            <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
               {renderItemIcons(item)}
               <span className={cn(
                 'text-[13px] leading-tight truncate',
@@ -573,13 +720,40 @@ function FileTree({ selectedProject, onFileOpen }) {
                 {item.name}
               </span>
             </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0 ml-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-shrink-0 ml-2">
               {item.type === 'file' && (
                 <>
                   <span className="tabular-nums">{formatFileSize(item.size)}</span>
                   <span className="font-mono">{item.permissionsRwx}</span>
                 </>
               )}
+              <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                {isDir && (
+                  <button
+                    className="p-0.5 rounded hover:bg-accent"
+                    title={t('fileTree.uploadToFolder')}
+                    onClick={(e) => { e.stopPropagation(); uploadTargetDirRef.current = item.path; fileInputRef.current?.click(); }}
+                  >
+                    <UploadCloud className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                )}
+                <button
+                  className="p-0.5 rounded hover:bg-accent"
+                  title={t('fileTree.copyPath')}
+                  onClick={(e) => handleCopyPath(e, item)}
+                >
+                  {copiedPath === item.path
+                    ? <Check className="w-3.5 h-3.5 text-green-500" />
+                    : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
+                </button>
+                <button
+                  className="p-0.5 rounded hover:bg-destructive/20"
+                  title={t('fileTree.deleteFile')}
+                  onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+                </button>
+              </span>
             </div>
           </div>
 
@@ -619,6 +793,16 @@ function FileTree({ selectedProject, onFileOpen }) {
             {t('fileTree.files')}
           </h3>
           <div className="flex gap-0.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => { uploadTargetDirRef.current = ''; fileInputRef.current?.click(); }}
+              title={t('fileTree.uploadFiles')}
+              disabled={uploading}
+            >
+              <UploadCloud className="w-3.5 h-3.5" />
+            </Button>
             <Button
               variant={viewMode === 'simple' ? 'default' : 'ghost'}
               size="sm"
@@ -685,35 +869,66 @@ function FileTree({ selectedProject, onFileOpen }) {
         </div>
       )}
 
-      <ScrollArea className="flex-1 px-2 py-1">
-        {files.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center mx-auto mb-3">
-              <Folder className="w-6 h-6 text-muted-foreground" />
+      {/* Upload status bar */}
+      {uploading && (
+        <div className="px-3 py-1.5 border-b border-border flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          {t('fileTree.uploading')}
+        </div>
+      )}
+      {uploadError && (
+        <div className="px-3 py-1.5 border-b border-border text-xs text-red-500">
+          {uploadError}
+        </div>
+      )}
+      {uploadSuccess && (
+        <div className="px-3 py-1.5 border-b border-border text-xs text-green-500">
+          {uploadSuccess}
+        </div>
+      )}
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        multiple
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+      <div
+        className="flex-1 relative min-h-0 overflow-hidden"
+        onDragOver={(e) => { e.preventDefault(); }}
+        onDrop={(e) => handleFileDrop(e, '')}
+      >
+        <ScrollArea className="h-full px-2 py-1">
+          {files.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center mx-auto mb-3">
+                <Folder className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <h4 className="font-medium text-foreground mb-1">{t('fileTree.noFilesFound')}</h4>
+              <p className="text-sm text-muted-foreground">
+                {t('fileTree.checkProjectPath')}
+              </p>
             </div>
-            <h4 className="font-medium text-foreground mb-1">{t('fileTree.noFilesFound')}</h4>
-            <p className="text-sm text-muted-foreground">
-              {t('fileTree.checkProjectPath')}
-            </p>
-          </div>
-        ) : filteredFiles.length === 0 && searchQuery ? (
-          <div className="text-center py-8">
-            <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center mx-auto mb-3">
-              <Search className="w-6 h-6 text-muted-foreground" />
+          ) : filteredFiles.length === 0 && searchQuery ? (
+            <div className="text-center py-8">
+              <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center mx-auto mb-3">
+                <Search className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <h4 className="font-medium text-foreground mb-1">{t('fileTree.noMatchesFound')}</h4>
+              <p className="text-sm text-muted-foreground">
+                {t('fileTree.tryDifferentSearch')}
+              </p>
             </div>
-            <h4 className="font-medium text-foreground mb-1">{t('fileTree.noMatchesFound')}</h4>
-            <p className="text-sm text-muted-foreground">
-              {t('fileTree.tryDifferentSearch')}
-            </p>
-          </div>
-        ) : (
-          <div>
-            {viewMode === 'simple' && renderFileTree(filteredFiles)}
-            {viewMode === 'compact' && renderCompactView(filteredFiles)}
-            {viewMode === 'detailed' && renderDetailedView(filteredFiles)}
-          </div>
-        )}
-      </ScrollArea>
+          ) : (
+            <div>
+              {viewMode === 'simple' && renderFileTree(filteredFiles)}
+              {viewMode === 'compact' && renderCompactView(filteredFiles)}
+              {viewMode === 'detailed' && renderDetailedView(filteredFiles)}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
 
       {/* Image Viewer Modal */}
       {selectedImage && (

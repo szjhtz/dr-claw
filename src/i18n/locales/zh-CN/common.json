@@ -198,7 +198,17 @@
     "justNow": "刚刚",
     "minAgo": "{{count}} 分钟前",
     "hoursAgo": "{{count}} 小时前",
-    "daysAgo": "{{count}} 天前"
+    "daysAgo": "{{count}} 天前",
+    "uploadFiles": "上传文件",
+    "uploading": "上传中...",
+    "uploadSuccess": "成功上传 {{count}} 个文件",
+    "uploadError": "上传失败",
+    "dropFilesHere": "将文件拖放到此处",
+    "copyPath": "复制路径",
+    "deleteFile": "删除",
+    "confirmDelete": "确定要删除 \"{{name}}\" 吗？",
+    "deleteSuccess": "删除成功",
+    "uploadToFolder": "上传到此文件夹"
   },
   "projectWizard": {
     "title": "创建新项目",

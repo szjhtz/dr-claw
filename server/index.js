@@ -888,6 +888,103 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
     }
 });
 
+// Delete a file or directory from the project filesystem
+app.delete('/api/projects/:projectName/file', authenticateToken, async (req, res) => {
+    try {
+        const projectName = req.params.projectName;
+        const { filePath } = req.body || {};
+
+        if (!filePath || typeof filePath !== 'string') {
+            return res.status(400).json({ error: 'Invalid file path' });
+        }
+
+        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
+        if (!projectRoot) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+
+        const resolved = path.isAbsolute(filePath)
+            ? path.resolve(filePath)
+            : path.resolve(projectRoot, filePath);
+        const normalizedRoot = path.resolve(projectRoot) + path.sep;
+        if (!resolved.startsWith(normalizedRoot)) {
+            return res.status(403).json({ error: 'Path must be under project root' });
+        }
+
+        await fsPromises.rm(resolved, { recursive: true });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting file:', error);
+        if (error.code === 'ENOENT') {
+            res.status(404).json({ error: 'File or directory not found' });
+        } else if (error.code === 'EACCES') {
+            res.status(403).json({ error: 'Permission denied' });
+        } else {
+            res.status(500).json({ error: error.message });
+        }
+    }
+});
+
+// Upload files to project filesystem
+app.post('/api/projects/:projectName/upload-files', authenticateToken, async (req, res) => {
+    try {
+        const multer = (await import('multer')).default;
+        const projectName = req.params.projectName;
+        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
+        if (!projectRoot) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+
+        const storage = multer.diskStorage({
+            destination: async (req, file, cb) => {
+                const targetDir = (req.body && req.body.targetDir) || '';
+                const resolved = path.resolve(projectRoot, targetDir);
+                const normalizedRoot = path.resolve(projectRoot) + path.sep;
+                if (!resolved.startsWith(normalizedRoot) && resolved !== path.resolve(projectRoot)) {
+                    return cb(new Error('Path must be under project root'));
+                }
+                await fsPromises.mkdir(resolved, { recursive: true });
+                cb(null, resolved);
+            },
+            filename: (req, file, cb) => {
+                const sanitized = file.originalname.replace(/[/\\]/g, '_').replace(/\.\./g, '_');
+                cb(null, sanitized);
+            }
+        });
+
+        const upload = multer({
+            storage,
+            limits: {
+                fileSize: 50 * 1024 * 1024, // 50MB
+                files: 20
+            }
+        });
+
+        upload.array('files', 20)(req, res, async (err) => {
+            if (err) {
+                const status = err.message === 'Path must be under project root' ? 403 : 400;
+                return res.status(status).json({ error: err.message });
+            }
+
+            if (!req.files || req.files.length === 0) {
+                return res.status(400).json({ error: 'No files provided' });
+            }
+
+            res.json({
+                files: req.files.map(f => ({
+                    name: f.filename,
+                    size: f.size,
+                    path: f.path
+                }))
+            });
+        });
+    } catch (error) {
+        console.error('Error in file upload endpoint:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // Global skills endpoints (GET /api/skills, GET /api/skills/file) are handled
 // by the skillsRoutes router mounted above at /api/skills.
 

@@ -198,7 +198,17 @@
     "justNow": "방금 전",
     "minAgo": "{{count}}분 전",
     "hoursAgo": "{{count}}시간 전",
-    "daysAgo": "{{count}}일 전"
+    "daysAgo": "{{count}}일 전",
+    "uploadFiles": "파일 업로드",
+    "uploading": "업로드 중...",
+    "uploadSuccess": "{{count}}개 파일 업로드 완료",
+    "uploadError": "업로드 실패",
+    "dropFilesHere": "여기에 파일을 놓으세요",
+    "copyPath": "경로 복사",
+    "deleteFile": "삭제",
+    "confirmDelete": "\"{{name}}\"을(를) 삭제하시겠습니까?",
+    "deleteSuccess": "삭제 완료",
+    "uploadToFolder": "이 폴더에 업로드"
   },
   "projectWizard": {
     "title": "새 프로젝트 생성",

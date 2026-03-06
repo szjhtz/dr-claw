@@ -198,7 +198,17 @@
     "justNow": "just now",
     "minAgo": "{{count}} min ago",
     "hoursAgo": "{{count}} hours ago",
-    "daysAgo": "{{count}} days ago"
+    "daysAgo": "{{count}} days ago",
+    "uploadFiles": "Upload files",
+    "uploading": "Uploading...",
+    "uploadSuccess": "{{count}} file(s) uploaded successfully",
+    "uploadError": "Upload failed",
+    "dropFilesHere": "Drop files here",
+    "copyPath": "Copy Path",
+    "deleteFile": "Delete",
+    "confirmDelete": "Are you sure you want to delete \"{{name}}\"?",
+    "deleteSuccess": "Deleted successfully",
+    "uploadToFolder": "Upload to this folder"
   },
   "projectWizard": {
     "title": "Create New Project",
