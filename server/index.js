@@ -2398,6 +2398,54 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
       });
     }
 
+    // Handle Gemini sessions
+    if (provider === 'gemini') {
+      const geminiSessionPath = path.join(homeDir, '.gemini', 'sessions', `${safeSessionId}.jsonl`);
+      let fileContent;
+      try {
+        fileContent = await fsPromises.readFile(geminiSessionPath, 'utf8');
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          return res.status(404).json({ error: 'Session file not found', path: geminiSessionPath });
+        }
+        throw error;
+      }
+
+      const lines = fileContent.trim().split('\n');
+      let latestStats = null;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          const entry = JSON.parse(lines[i]);
+          if (entry.type === 'status' && entry.stats) {
+            latestStats = entry.stats;
+            break;
+          }
+        } catch {
+          // Ignore malformed line
+        }
+      }
+
+      const used = latestStats
+        ? (latestStats.total_tokens || ((latestStats.input_tokens || 0) + (latestStats.output_tokens || 0)))
+        : 0;
+      const total = parseInt(process.env.GEMINI_CONTEXT_WINDOW || process.env.CONTEXT_WINDOW || '2000000', 10);
+      const cacheCreation = latestStats?.cache_creation_input_tokens || 0;
+      const cacheRead = latestStats?.cache_read_input_tokens || 0;
+      const input = latestStats?.input_tokens || 0;
+      const output = latestStats?.output_tokens || 0;
+
+      return res.json({
+        used,
+        total,
+        breakdown: {
+          input,
+          output,
+          cacheCreation,
+          cacheRead
+        }
+      });
+    }
+
     // Handle Claude sessions (default)
     // Extract actual project path
     let projectPath;

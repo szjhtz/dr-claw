@@ -69,7 +69,7 @@ import os from 'os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VIBELAB_SKILLS_DIR = path.join(__dirname, '..', 'skills');
-const PROJECT_SKILL_FOLDERS = ['.claude', '.agents', '.cursor'];
+const PROJECT_SKILL_FOLDERS = ['.claude', '.agents', '.cursor', '.gemini'];
 const PROJECT_PIPELINE_FOLDERS = ['Survey', 'Ideation', 'Experiment', 'Publication'];
 
 function normalizeTaskStatus(status) {
@@ -1105,8 +1105,15 @@ async function getSessionMessages(projectName, sessionId, limit = null, offset =
           lastRole === role &&
           typeof lastContent === 'string';
 
-        if (canMerge) {
+        if (canMerge && role === 'assistant') {
           last.content = `${lastContent}${content}`;
+          if (entry.timestamp) {
+            last.timestamp = entry.timestamp;
+          }
+          return;
+        }
+
+        if (canMerge && role === 'user' && lastContent === content) {
           if (entry.timestamp) {
             last.timestamp = entry.timestamp;
           }

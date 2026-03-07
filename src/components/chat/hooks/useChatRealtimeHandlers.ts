@@ -586,14 +586,24 @@ export function useChatRealtimeHandlers({
         if (isLegacyTaskMasterInstallError(latestMessage.error)) {
           break;
         }
-        setChatMessages((previous) => [
-          ...previous,
-          {
-            type: 'error',
-            content: `Error: ${latestMessage.error}`,
-            timestamp: new Date(),
-          },
-        ]);
+        const details = typeof latestMessage.details === 'string' ? latestMessage.details.trim() : '';
+        const errorContent = details
+          ? `Error: ${latestMessage.error}\n\n<details><summary>Technical details</summary>\n\n\`\`\`text\n${details.slice(0, 8000)}\n\`\`\`\n</details>`
+          : `Error: ${latestMessage.error}`;
+        setChatMessages((previous) => {
+          const last = previous[previous.length - 1];
+          if (last?.type === 'error' && String(last.content || '') === errorContent) {
+            return previous;
+          }
+          return [
+            ...previous,
+            {
+              type: 'error',
+              content: errorContent,
+              timestamp: new Date(),
+            },
+          ];
+        });
         break;
       }
 

@@ -35,6 +35,9 @@ const commonGeminiTools = [
   'ask_user',
   'google_web_search',
   'web_fetch',
+  'activate_skill',
+  'save_memory',
+  'get_internal_docs',
   'enter_plan_mode',
   'exit_plan_mode',
   'complete_task'

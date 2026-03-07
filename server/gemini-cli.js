@@ -11,6 +11,7 @@ import { writeProjectTemplates } from './templates/index.js';
 const spawnFunction = process.platform === 'win32' ? crossSpawn : spawn;
 
 let activeGeminiSessions = new Map(); // Track active sessions: { process, heartbeat, sessionId, options, sessionAllowedTools, sessionDisallowedTools }
+const GEMINI_DEFAULT_CONTEXT_WINDOW = parseInt(process.env.GEMINI_CONTEXT_WINDOW || process.env.CONTEXT_WINDOW || '2000000', 10);
 
 const GEMINI_TOOL_NAME_MAP = {
   // Official Gemini CLI tool names
@@ -40,10 +41,126 @@ const GEMINI_TOOL_NAME_MAP = {
   ask_user_question: 'AskUserQuestion'
 };
 
+const GEMINI_PLAN_MODE_TOOLS = [
+  'read_file',
+  'read_many_files',
+  'list_directory',
+  'glob',
+  'grep_search',
+  'write_todos',
+  'ask_user',
+  'enter_plan_mode',
+  'exit_plan_mode',
+  'google_web_search',
+  'web_fetch',
+  'activate_skill',
+  'save_memory',
+  'get_internal_docs'
+];
+
+const GEMINI_INTERACTIVE_TOOLS = new Set(['ask_user', 'ask_user_question', 'AskUserQuestion']);
+const GEMINI_PLAN_BLOCKED_TOOLS = new Set([
+  'run_shell_command',
+  'write_file',
+  'replace',
+  'insert_content',
+  'undo',
+  'complete_task',
+  'Bash',
+  'Write',
+  'Edit'
+]);
+
 function normalizeGeminiToolName(name) {
   if (!name || typeof name !== 'string') return name;
   const normalized = name.trim();
   return GEMINI_TOOL_NAME_MAP[normalized] || normalized;
+}
+
+function ensurePlanModeAllowedTools(allowedTools = []) {
+  const merged = new Set(allowedTools);
+  for (const tool of GEMINI_PLAN_MODE_TOOLS) {
+    merged.add(tool);
+    const alias = GEMINI_TOOL_NAME_MAP[tool];
+    if (alias) merged.add(alias);
+  }
+  return Array.from(merged);
+}
+
+function isLikelyMultiStepRequest(command) {
+  const text = String(command || '').trim();
+  if (!text) return false;
+
+  const numberedSteps = (text.match(/^\s*\d+\.\s+/gm) || []).length;
+  const bulletSteps = (text.match(/^\s*[-*]\s+/gm) || []).length;
+  const explicitMultiStep = /\b(multi[- ]step|step by step|several tasks|task list|pipeline)\b/i.test(text);
+  const transitionWords = (text.match(/\b(first|then|next|after that|finally)\b/gi) || []).length;
+
+  return numberedSteps >= 2 || bulletSteps >= 2 || explicitMultiStep || transitionWords >= 2;
+}
+
+function isAllowedBeforeTodos(rawToolName) {
+  const normalized = String(rawToolName || '').trim().toLowerCase();
+  return [
+    'write_todos',
+    'todo_write',
+    'activate_skill',
+    'enter_plan_mode'
+  ].includes(normalized);
+}
+
+function stripInternalContextPrefix(text) {
+  if (typeof text !== 'string') return '';
+  let cleaned = text;
+  const contextPrefixPattern = /^\s*\[Context:[^\]]*]\s*(?:\r?\n\s*)*/i;
+  while (contextPrefixPattern.test(cleaned)) {
+    cleaned = cleaned.replace(contextPrefixPattern, '');
+  }
+  return cleaned;
+}
+
+function sanitizePersistedGeminiContent(content) {
+  if (typeof content === 'string') {
+    return stripInternalContextPrefix(content);
+  }
+
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (part && typeof part === 'object' && typeof part.text === 'string') {
+        return { ...part, text: stripInternalContextPrefix(part.text) };
+      }
+      return part;
+    });
+  }
+
+  return content;
+}
+
+function summarizeGeminiErrorOutput(rawErrorOutput, fallbackModel) {
+  const text = String(rawErrorOutput || '').trim();
+  if (!text) {
+    return { summary: 'Gemini request failed.', details: '' };
+  }
+
+  const isCapacity429 =
+    /status\s+429|Too Many Requests|RESOURCE_EXHAUSTED|MODEL_CAPACITY_EXHAUSTED|No capacity available/i.test(text);
+  if (isCapacity429) {
+    const modelMatch =
+      text.match(/No capacity available for model ([a-zA-Z0-9._-]+)/i) ||
+      text.match(/"model"\s*:\s*"([^"]+)"/i) ||
+      text.match(/GeminiCLI\/[^\s/]+\/([a-zA-Z0-9._-]+)/i);
+    const modelName = modelMatch?.[1] || fallbackModel || 'current model';
+    return {
+      summary: `Model capacity exhausted for ${modelName} (HTTP 429). Please retry in a moment or switch to a Flash/Lite model.`,
+      details: text.slice(0, 12000)
+    };
+  }
+
+  const concise = text.split('\n').map((line) => line.trim()).find(Boolean) || 'Gemini request failed.';
+  return {
+    summary: concise.slice(0, 400),
+    details: text.slice(0, 12000)
+  };
 }
 
 function inferProjectName(workingDir, projectPath) {
@@ -228,6 +345,52 @@ async function enrichListDirectoryResult(toolContext, outputText, workingDir) {
   }
 }
 
+async function handleGeminiImages(command, images, workingDir) {
+  const tempImagePaths = [];
+  let tempDir = null;
+  if (!Array.isArray(images) || images.length === 0) {
+    return { modifiedCommand: command, tempImagePaths, tempDir };
+  }
+
+  try {
+    tempDir = path.join(workingDir || process.cwd(), '.tmp', 'images', Date.now().toString());
+    await fs.mkdir(tempDir, { recursive: true });
+
+    for (const [index, image] of images.entries()) {
+      const data = String(image?.data || '');
+      const matches = data.match(/^data:([^;]+);base64,(.+)$/);
+      if (!matches) continue;
+      const [, mimeType, base64Data] = matches;
+      const ext = mimeType.includes('/') ? mimeType.split('/')[1] : 'bin';
+      const originalName = image?.name ? String(image.name).replace(/[^a-zA-Z0-9._-]/g, '_') : null;
+      const filename = originalName || `image_${index}.${ext}`;
+      const filepath = path.join(tempDir, filename);
+      await fs.writeFile(filepath, Buffer.from(base64Data, 'base64'));
+      tempImagePaths.push(filepath);
+    }
+
+    if (tempImagePaths.length === 0) {
+      return { modifiedCommand: command, tempImagePaths, tempDir };
+    }
+
+    const note = `\n\n[Attached image files]\n${tempImagePaths.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+    return { modifiedCommand: `${command}${note}`, tempImagePaths, tempDir };
+  } catch (error) {
+    console.error('[Gemini] Failed to process images:', error.message);
+    return { modifiedCommand: command, tempImagePaths, tempDir };
+  }
+}
+
+async function cleanupGeminiTempFiles(tempImagePaths, tempDir) {
+  if (!Array.isArray(tempImagePaths) || tempImagePaths.length === 0) return;
+  for (const imagePath of tempImagePaths) {
+    try { await fs.unlink(imagePath); } catch {}
+  }
+  if (tempDir) {
+    try { await fs.rm(tempDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 /**
  * Ensures a session directory exists and creates a basic JSONL metadata file if it doesn't.
  * This helps VibeLab discover the session even if the CLI hasn't written to it yet.
@@ -283,6 +446,17 @@ export async function spawnGemini(command, options = {}, ws) {
     let contentBlockStarted = false;
     let currentBlockIndex = 0;
     let messageBuffer = '';
+    let tempImagePaths = [];
+    let tempDir = null;
+    // Default: do not hard-require native write_todos.
+    // Keep compatibility with markdown/shim flows unless explicitly enabled.
+    const requireWriteTodos = Boolean(toolsSettings?.enforceNativeTodos) &&
+      (permissionMode === 'plan' || isLikelyMultiStepRequest(command));
+    let hasNativeTodoWrite = false;
+    const cleanedInitialUserCommand = stripInternalContextPrefix(String(command || ''));
+    let initialUserCommandSaved = false;
+    let lastSentGeminiErrorSummary = '';
+    let policyViolationTriggered = false;
     
     const workingDir = cwd || projectPath || process.cwd();
 
@@ -298,7 +472,9 @@ export async function spawnGemini(command, options = {}, ws) {
     }
     
     // Track allowed/disallowed tools locally for this session
-    const sessionAllowedTools = [...(toolsSettings?.allowedTools || [])];
+    const sessionAllowedTools = permissionMode === 'plan'
+      ? ensurePlanModeAllowedTools([...(toolsSettings?.allowedTools || [])])
+      : [...(toolsSettings?.allowedTools || [])];
     const sessionDisallowedTools = [...(toolsSettings?.disallowedTools || [])];
     
     // Build Gemini CLI command
@@ -320,22 +496,25 @@ export async function spawnGemini(command, options = {}, ws) {
       //   '- Use todo/task tools when available to keep an explicit execution plan.'
       // ].join('\n');
       // const effectivePrompt = `${command}\n\n${workflowPromptSuffix}`;
-      const effectivePrompt = `${command}`;
+      const imageResult = await handleGeminiImages(command, images, workingDir);
+      tempImagePaths = imageResult.tempImagePaths;
+      tempDir = imageResult.tempDir;
+      const effectivePrompt = `${imageResult.modifiedCommand}`;
       args.push('--prompt', effectivePrompt);
 
-      if ((!sessionId || sessionId.startsWith('new-session-')) && model) {
+      if (model) {
         args.push('--model', model);
       }
 
-      // CRITICAL FIX: Always use YOLO mode internally to ensure all tools (write_file, etc.)
-      // are available and authorized even for sub-agents (generalist).
-      // We handle the actual "approval" logic ourselves in the message stream.
+      // Keep Gemini CLI in yolo mode internally and enforce policy in our own approval hook.
+      // In non-interactive server sessions, Gemini's own policy prompts can deny tools unexpectedly.
       args.push('--approval-mode', 'yolo');
 
       const includeDirectories = [
         path.join(process.cwd(), 'skills'),
         path.join(workingDir, '.agents', 'skills'),
-        path.join(workingDir, '.claude', 'skills')
+        path.join(workingDir, '.claude', 'skills'),
+        path.join(workingDir, '.gemini', 'skills')
       ];
       for (const includeDir of includeDirectories) {
         try {
@@ -456,9 +635,31 @@ export async function spawnGemini(command, options = {}, ws) {
       });
     };
 
+    const sendGeminiError = (error, details = undefined) => {
+      const summary = String(error || '').trim();
+      if (!summary || summary === lastSentGeminiErrorSummary) {
+        return;
+      }
+      lastSentGeminiErrorSummary = summary;
+      ws.send({
+        type: 'gemini-error',
+        error: summary,
+        ...(typeof details === 'string' && details.trim() ? { details } : {}),
+        sessionId: capturedSessionId || sessionId || null
+      });
+    };
+
     const handleToolApproval = async (toolName, input, allowedTools = [], disallowedTools = []) => {
       // Internal bypass if UI mode is actually bypass
       if (permissionMode === 'bypassPermissions' || toolsSettings?.skipPermissions === true) return true;
+
+      const isDisallowed = disallowedTools.some(entry => matchesToolPermission(entry, toolName, input));
+      if (isDisallowed) return false;
+
+      if (permissionMode === 'plan') {
+        const allowedInPlan = ensurePlanModeAllowedTools(allowedTools);
+        return allowedInPlan.some(entry => matchesToolPermission(entry, toolName, input));
+      }
 
       // Auto Edit Mode: Automatically approve editing tools
       if (permissionMode === 'acceptEdits') {
@@ -468,9 +669,6 @@ export async function spawnGemini(command, options = {}, ws) {
           return true;
         }
       }
-
-      const isDisallowed = disallowedTools.some(entry => matchesToolPermission(entry, toolName, input));
-      if (isDisallowed) return false;
 
       const isAllowed = allowedTools.some(entry => matchesToolPermission(entry, toolName, input));
       if (isAllowed) return true;
@@ -484,7 +682,18 @@ export async function spawnGemini(command, options = {}, ws) {
         sessionId: capturedSessionId || sessionId || null
       });
 
-      const decision = await waitForToolApproval(requestId);
+      const requiresInteraction = GEMINI_INTERACTIVE_TOOLS.has(String(toolName || ''));
+      const decision = await waitForToolApproval(requestId, {
+        timeoutMs: requiresInteraction ? 0 : undefined,
+        onCancel: (reason) => {
+          ws.send({
+            type: 'claude-permission-cancelled',
+            requestId,
+            reason,
+            sessionId: capturedSessionId || sessionId || null
+          });
+        }
+      });
       if (!decision || decision.cancelled || !decision.allow) return false;
 
       if (decision.rememberEntry && typeof decision.rememberEntry === 'string') {
@@ -526,6 +735,7 @@ export async function spawnGemini(command, options = {}, ws) {
 
     const processLine = async (line) => {
       if (!line.trim()) return;
+      if (policyViolationTriggered) return;
       try {
         const response = JSON.parse(line);
         hasParsedStructuredOutput = true;
@@ -541,12 +751,13 @@ export async function spawnGemini(command, options = {}, ws) {
               await syncSessionMetadata(capturedSessionId, workingDir);
               
               // NEW: If we have an initial command, save it now that we have a real SID
-              if (command) {
+              if (cleanedInitialUserCommand) {
                 await appendToSessionFile(capturedSessionId, {
                   role: 'user',
-                  content: command,
+                  content: cleanedInitialUserCommand,
                   type: 'message'
                 });
+                initialUserCommandSaved = true;
               }
 
               if (oldKey !== capturedSessionId) {
@@ -583,9 +794,26 @@ export async function spawnGemini(command, options = {}, ws) {
                   sessionId: capturedSessionId || sessionId || null
                 });
               } else {
+                const sanitizedContent = response.role === 'user'
+                  ? sanitizePersistedGeminiContent(response.content)
+                  : response.content;
+                const sanitizedContentText = typeof sanitizedContent === 'string'
+                  ? sanitizedContent
+                  : Array.isArray(sanitizedContent)
+                    ? sanitizedContent.map((part) => part?.text || (typeof part === 'string' ? part : '')).join('')
+                    : '';
+                if (
+                  response.role === 'user' &&
+                  initialUserCommandSaved &&
+                  cleanedInitialUserCommand &&
+                  typeof sanitizedContentText === 'string' &&
+                  sanitizedContentText.trim() === cleanedInitialUserCommand.trim()
+                ) {
+                  break;
+                }
                 await appendToSessionFile(capturedSessionId || sessionId || initialKey, {
                   role: response.role,
-                  content: response.content,
+                  content: sanitizedContent,
                   type: 'message'
                 });
               }
@@ -617,10 +845,36 @@ export async function spawnGemini(command, options = {}, ws) {
             const originalToolInput = response.parameters || response.input || response.arguments;
             const toolInput = normalizeGeminiToolInput(rawToolName, originalToolInput);
             const toolCallId = response.id || `tool_${Date.now()}`;
+            const parentToolUseId = response.parent_tool_use_id || response.parentToolUseId || null;
+            const rawNameNormalized = String(rawToolName || '').trim();
+            const policyTargetName = rawToolName || toolName;
+
+            if (
+              rawNameNormalized.toLowerCase() === 'write_todos' ||
+              rawNameNormalized.toLowerCase() === 'todo_write' ||
+              String(toolName || '').toLowerCase() === 'todowrite'
+            ) {
+              hasNativeTodoWrite = true;
+            }
+
+            if (requireWriteTodos && !hasNativeTodoWrite && !isAllowedBeforeTodos(rawToolName)) {
+              policyViolationTriggered = true;
+              sendGeminiError('Policy violation: multi-step tasks must call write_todos before executing other tools.');
+              geminiProcess.kill('SIGKILL');
+              break;
+            }
+
+            if (permissionMode === 'plan' && GEMINI_PLAN_BLOCKED_TOOLS.has(policyTargetName)) {
+              policyViolationTriggered = true;
+              sendGeminiError(`Tool execution denied by plan policy: ${policyTargetName}`);
+              geminiProcess.kill('SIGKILL');
+              break;
+            }
             toolCallContext.set(toolCallId, {
               rawToolName,
               normalizedToolName: toolName,
-              toolInput
+              toolInput,
+              parentToolUseId
             });
 
             await appendToSessionFile(capturedSessionId || sessionId || initialKey, {
@@ -628,13 +882,15 @@ export async function spawnGemini(command, options = {}, ws) {
               toolName,
               rawToolName,
               toolInput,
-              toolCallId
+              toolCallId,
+              parentToolUseId
             });
 
             ws.send({
               type: 'gemini-response',
               data: {
                 role: 'assistant',
+                ...(parentToolUseId ? { parentToolUseId } : {}),
                 content: [
                   {
                     type: 'tool_use',
@@ -657,6 +913,7 @@ export async function spawnGemini(command, options = {}, ws) {
                   type: 'gemini-response',
                   data: {
                     role: 'assistant',
+                    ...(parentToolUseId ? { parentToolUseId } : {}),
                     content: [{ type: 'tool_use', id: syntheticId, name: 'TodoWrite', input: { todos } }]
                   },
                   sessionId: capturedSessionId || sessionId || null
@@ -680,6 +937,7 @@ export async function spawnGemini(command, options = {}, ws) {
                   type: 'gemini-response',
                   data: {
                     role: 'assistant',
+                    ...(parentToolUseId ? { parentToolUseId } : {}),
                     content: [{ type: 'tool_use', id: syntheticId, name: 'TodoWrite', input: { todos } }]
                   },
                   sessionId: capturedSessionId || sessionId || null
@@ -737,6 +995,7 @@ export async function spawnGemini(command, options = {}, ws) {
                 type: 'tool_result',
                 output: outputText,
                 toolCallId: resultToolCallId,
+                parentToolUseId: ctx?.parentToolUseId || null,
                 isError
               });
 
@@ -745,6 +1004,7 @@ export async function spawnGemini(command, options = {}, ws) {
                   type: 'gemini-response',
                   data: {
                     role: 'user',
+                    ...(ctx?.parentToolUseId ? { parentToolUseId: ctx.parentToolUseId } : {}),
                     content: [
                       {
                         type: 'tool_result',
@@ -799,9 +1059,24 @@ export async function spawnGemini(command, options = {}, ws) {
           case 'status':
             if (response.stats || response.status === 'completed') {
               if (response.stats) {
+                await appendToSessionFile(capturedSessionId || sessionId || initialKey, {
+                  type: 'status',
+                  stats: response.stats
+                });
+              }
+              if (response.stats) {
                 ws.send({
                   type: 'token-budget',
-                  data: { used: response.stats.total_tokens || response.stats.input_tokens + response.stats.output_tokens, total: 2000000 },
+                  data: {
+                    used: response.stats.total_tokens || response.stats.input_tokens + response.stats.output_tokens,
+                    total: GEMINI_DEFAULT_CONTEXT_WINDOW,
+                    breakdown: {
+                      input: response.stats.input_tokens || 0,
+                      output: response.stats.output_tokens || 0,
+                      cacheCreation: response.stats.cache_creation_input_tokens || 0,
+                      cacheRead: response.stats.cache_read_input_tokens || 0
+                    }
+                  },
                   sessionId: capturedSessionId || sessionId || null
                 });
               }
@@ -812,7 +1087,7 @@ export async function spawnGemini(command, options = {}, ws) {
             break;
 
           case 'error':
-            ws.send({ type: 'gemini-error', error: response.message, sessionId: capturedSessionId || sessionId || null });
+            sendGeminiError(response.message);
             break;
         }
       } catch (parseError) {
@@ -835,9 +1110,13 @@ export async function spawnGemini(command, options = {}, ws) {
     
     geminiProcess.stderr.on('data', (data) => {
       const errorOutput = data.toString();
+      if (policyViolationTriggered && /Policy violation: multi-step tasks must call write_todos/i.test(errorOutput)) {
+        return;
+      }
       if (/error|exception|fail|invalid|denied/i.test(errorOutput) && !/cached credentials/i.test(errorOutput)) {
         console.error(`[Gemini STDERR] ${errorOutput}`);
-        ws.send({ type: 'gemini-error', error: errorOutput, sessionId: capturedSessionId || sessionId || null });
+        const parsed = summarizeGeminiErrorOutput(errorOutput, model);
+        sendGeminiError(parsed.summary, parsed.details);
       }
     });
     
@@ -855,8 +1134,9 @@ export async function spawnGemini(command, options = {}, ws) {
       const sessionData = activeGeminiSessions.get(finalSessionId);
       if (sessionData?.heartbeat) clearInterval(sessionData.heartbeat);
       activeGeminiSessions.delete(finalSessionId);
+      await cleanupGeminiTempFiles(tempImagePaths, tempDir);
       ws.send({ type: 'gemini-complete', sessionId: finalSessionId, exitCode: code, isNewSession: (!sessionId || sessionId.startsWith('new-session-')) && !!command });
-      if (code === 0 || code === null) resolve();
+      if (policyViolationTriggered || code === 0 || code === null) resolve();
       else reject(new Error(`Gemini CLI exited with code ${code}`));
     });
     
@@ -866,7 +1146,8 @@ export async function spawnGemini(command, options = {}, ws) {
       const sessionData = activeGeminiSessions.get(finalSessionId);
       if (sessionData && sessionData.heartbeat) clearInterval(sessionData.heartbeat);
       activeGeminiSessions.delete(finalSessionId);
-      ws.send({ type: 'gemini-error', error: error.message, sessionId: capturedSessionId || sessionId || null });
+      cleanupGeminiTempFiles(tempImagePaths, tempDir).catch(() => {});
+      sendGeminiError(error.message);
       reject(error);
     });
     geminiProcess.stdin.end();

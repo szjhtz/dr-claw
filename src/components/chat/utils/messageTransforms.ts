@@ -64,6 +64,15 @@ const normalizeToolInput = (value: unknown): string => {
   }
 };
 
+const stripInternalContextPrefix = (value: string): string => {
+  let cleaned = String(value || '');
+  const contextPrefixPattern = /^\s*\[Context:[^\]]*]\s*(?:\r?\n\s*)*/i;
+  while (contextPrefixPattern.test(cleaned)) {
+    cleaned = cleaned.replace(contextPrefixPattern, '');
+  }
+  return cleaned;
+};
+
 const toAbsolutePath = (projectPath: string, filePath?: string) => {
   if (!filePath) {
     return filePath;
@@ -390,6 +399,16 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
   // Normalized helper to handle both Claude (nested) and Gemini (flat) formats
   const getRole = (msg: any) => msg.role || msg.message?.role;
   const getContent = (msg: any) => msg.content || msg.message?.content;
+  const findSubagentContainer = (parentToolUseId: string) => {
+    for (let index = converted.length - 1; index >= 0; index -= 1) {
+      const candidate = converted[index];
+      if (!candidate.isSubagentContainer) continue;
+      if (candidate.toolId === parentToolUseId || candidate.toolCallId === parentToolUseId) {
+        return candidate;
+      }
+    }
+    return null;
+  };
 
   rawMessages.forEach((message) => {
     const role = getRole(message);
@@ -430,6 +449,7 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
       } else {
         text = decodeHtmlEntities(String(content));
       }
+      text = stripInternalContextPrefix(text);
 
       // Check if this user message also contains tool_result parts
       const hasToolResults = Array.isArray(content) &&
@@ -469,6 +489,10 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
           taskStatus: status,
         });
       } else if (isSkillRelated) {
+        const last = converted[converted.length - 1];
+        if (last?.type === 'user' && String(last.content || '') === unescapeWithMathProtection(text)) {
+          return;
+        }
         converted.push({
           type: 'user',
           content: unescapeWithMathProtection(text),
@@ -476,6 +500,10 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
           isSkillContent: true,
         });
       } else {
+        const last = converted[converted.length - 1];
+        if (last?.type === 'user' && String(last.content || '') === unescapeWithMathProtection(text)) {
+          return;
+        }
         converted.push({
           type: 'user',
           content: unescapeWithMathProtection(text),
@@ -496,6 +524,30 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
     }
 
     if (message.type === 'tool_use' && message.toolName) {
+      const parentToolUseId = message.parentToolUseId || message.parent_tool_use_id;
+      const toolCallId = message.toolCallId || message.toolId;
+      if (parentToolUseId) {
+        const parent = findSubagentContainer(String(parentToolUseId));
+        if (parent) {
+          const existingChildren = parent.subagentState?.childTools || [];
+          parent.subagentState = {
+            childTools: [
+              ...existingChildren,
+              {
+                toolId: String(toolCallId || `tool_${existingChildren.length + 1}`),
+                toolName: message.toolName,
+                toolInput: normalizeToolInput(message.toolInput),
+                toolResult: null,
+                timestamp: new Date(message.timestamp || Date.now()),
+              },
+            ],
+            currentToolIndex: existingChildren.length,
+            isComplete: false,
+          };
+          return;
+        }
+      }
+
       converted.push({
         type: 'assistant',
         content: '',
@@ -503,12 +555,37 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
         isToolUse: true,
         toolName: message.toolName,
         toolInput: normalizeToolInput(message.toolInput),
-        toolCallId: message.toolCallId,
+        toolId: toolCallId,
+        toolCallId: toolCallId,
       });
       return;
     }
 
     if (message.type === 'tool_result') {
+      const parentToolUseId = message.parentToolUseId || message.parent_tool_use_id;
+      if (parentToolUseId && message.toolCallId) {
+        const parent = findSubagentContainer(String(parentToolUseId));
+        if (parent?.subagentState?.childTools) {
+          const updatedChildren = parent.subagentState.childTools.map((child) => {
+            if (child.toolId !== message.toolCallId) return child;
+            return {
+              ...child,
+              toolResult: {
+                content: message.output || '',
+                isError: false,
+              },
+            };
+          });
+          parent.subagentState = {
+            ...parent.subagentState,
+            childTools: updatedChildren,
+            currentToolIndex: Math.max(parent.subagentState.currentToolIndex, updatedChildren.length - 1),
+            isComplete: updatedChildren.every((child) => Boolean(child.toolResult)),
+          };
+          return;
+        }
+      }
+
       for (let index = converted.length - 1; index >= 0; index -= 1) {
         const convertedMessage = converted[index];
         if (!convertedMessage.isToolUse || convertedMessage.toolResult) {
