@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-03-09T03:31:53.086Z",
+  "generatedAt": "2026-03-11T04:50:01.412Z",
   "schema": "skills-taxonomy-v2",
-  "totalSkills": 107,
+  "totalSkills": 108,
   "skills": [
     {
       "name": "academic-researcher",
@@ -42,10 +42,10 @@
       },
       "owner": "awesome-llm-apps",
       "relatedSkills": [
+        "gemini-deep-research",
         "inno-code-survey",
         "inno-deep-research",
-        "biorxiv-database",
-        "chroma"
+        "biorxiv-database"
       ]
     },
     {
@@ -314,8 +314,8 @@
       "relatedSkills": [
         "dataset-discovery",
         "academic-researcher",
-        "inno-code-survey",
-        "inno-deep-research"
+        "gemini-deep-research",
+        "inno-code-survey"
       ]
     },
     {
@@ -1337,6 +1337,51 @@
       ]
     },
     {
+      "name": "gemini-deep-research",
+      "primaryIntent": "research",
+      "intents": [
+        "research"
+      ],
+      "capabilities": [
+        "search-retrieval",
+        "agent-workflow"
+      ],
+      "domains": [
+        "general"
+      ],
+      "keywords": [
+        "gemini-deep-research",
+        "survey",
+        "search-retrieval",
+        "agent-workflow",
+        "gemini",
+        "deep",
+        "research",
+        "perform",
+        "complex",
+        "long",
+        "running",
+        "tasks"
+      ],
+      "source": "imported",
+      "status": "verified",
+      "summary": "Perform complex, long-running research tasks using Gemini Deep Research Agent. Use when: asked to research topics requiring multi-source synthesis, competitive analysis, market research, literature review, or comprehensive technical invest...",
+      "legacy": {
+        "dirPath": "gemini-deep-research",
+        "skillFile": "skills/gemini-deep-research/SKILL.md",
+        "topLevelGroup": "Standalone",
+        "collection": "Survey",
+        "domain": "General"
+      },
+      "owner": "clawdbot",
+      "relatedSkills": [
+        "inno-deep-research",
+        "inno-code-survey",
+        "inno-pipeline-planner",
+        "inno-research-orchestrator"
+      ]
+    },
+    {
       "name": "llama-cpp",
       "primaryIntent": "deployment",
       "intents": [
@@ -1693,9 +1738,9 @@
       },
       "relatedSkills": [
         "inno-deep-research",
+        "gemini-deep-research",
         "academic-researcher",
-        "biorxiv-database",
-        "inno-pipeline-planner"
+        "biorxiv-database"
       ]
     },
     {
@@ -1736,10 +1781,10 @@
       },
       "owner": "awesome-llm-apps",
       "relatedSkills": [
+        "gemini-deep-research",
         "inno-code-survey",
         "academic-researcher",
-        "biorxiv-database",
-        "inno-research-orchestrator"
+        "biorxiv-database"
       ]
     },
     {
@@ -2131,9 +2176,9 @@
       },
       "relatedSkills": [
         "inno-research-orchestrator",
+        "gemini-deep-research",
         "inno-code-survey",
-        "inno-deep-research",
-        "inno-experiment-dev"
+        "inno-deep-research"
       ]
     },
     {
@@ -2311,9 +2356,9 @@
       },
       "relatedSkills": [
         "inno-pipeline-planner",
+        "gemini-deep-research",
         "inno-deep-research",
-        "inno-code-survey",
-        "inno-experiment-dev"
+        "inno-code-survey"
       ]
     },
     {

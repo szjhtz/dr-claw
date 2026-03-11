@@ -12,14 +12,14 @@ export const GUIDED_PROMPT_SCENARIOS: GuidedPromptScenario[] = [
     icon: '📄',
     titleKey: 'guidedStarter.scenarios.paperReproduction.title',
     descriptionKey: 'guidedStarter.scenarios.paperReproduction.description',
-    skills: ['inno-deep-research', 'academic-researcher', 'inno-paper-reviewer'],
+    skills: ['inno-deep-research', 'gemini-deep-research', 'academic-researcher', 'inno-paper-reviewer'],
   },
   {
     id: 'literature-survey',
     icon: '🔎',
     titleKey: 'guidedStarter.scenarios.literatureSurvey.title',
     descriptionKey: 'guidedStarter.scenarios.literatureSurvey.description',
-    skills: ['inno-deep-research', 'dataset-discovery', 'inno-code-survey'],
+    skills: ['inno-deep-research', 'gemini-deep-research', 'dataset-discovery', 'inno-code-survey'],
   },
   {
     id: 'research-idea',

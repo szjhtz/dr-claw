@@ -17,6 +17,12 @@
     "capabilities": ["search-retrieval", "data-processing"],
     "domains": ["bioinformatics"]
   },
+  "gemini-deep-research": {
+    "primaryIntent": "research",
+    "intents": ["research"],
+    "capabilities": ["search-retrieval", "agent-workflow"],
+    "domains": ["general"]
+  },
   "constitutional-ai": {
     "primaryIntent": "evaluation",
     "intents": ["evaluation", "deployment"],

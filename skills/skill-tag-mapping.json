@@ -21,6 +21,7 @@
     "biorxiv-database": { "zh": "阶段: 资源准备", "en": "Stage: Resource Prep", "ko": "단계: 리소스 준비" },
     "scientific-writing": { "zh": "阶段: 论文撰写", "en": "Stage: Paper Writing", "ko": "단계: 논문 작성" },
     "academic-researcher": { "zh": "阶段: 调研", "en": "Stage: Survey", "ko": "단계: 조사" },
+    "gemini-deep-research": { "zh": "阶段: 调研", "en": "Stage: Survey", "ko": "단계: 조사" },
     "research-grants": { "zh": "阶段: 论文撰写", "en": "Stage: Paper Writing", "ko": "단계: 논문 작성" },
 
     "accelerate": { "zh": "类别: 训练与调优", "en": "Category: Training & Tuning", "ko": "카테고리: 훈련 및 튜닝" },
