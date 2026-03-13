@@ -8,8 +8,11 @@ import {
   Repeat2,
   MessageCircle,
   Bookmark,
+  ArrowUp,
+  FileText,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type { NewsSourceKey } from './useNewsDashboardData';
 
@@ -34,14 +37,10 @@ export type NewsItem = {
   engagement?: { likes?: number; retweets?: number; reposts?: number; replies?: number; comments?: number; collects?: number; impressions?: number };
   avatar_url?: string;
   media_urls?: string[];
+  // HuggingFace-specific fields
+  submitted_by?: string;
+  organization?: string;
 };
-
-const SCORE_COLORS = [
-  { label: 'Relevance', key: 'relevance_score' as const, bar: 'bg-gradient-to-r from-sky-400 to-sky-500', dot: 'bg-sky-500' },
-  { label: 'Recency', key: 'recency_score' as const, bar: 'bg-gradient-to-r from-emerald-400 to-emerald-500', dot: 'bg-emerald-500' },
-  { label: 'Popularity', key: 'popularity_score' as const, bar: 'bg-gradient-to-r from-amber-400 to-amber-500', dot: 'bg-amber-500' },
-  { label: 'Quality', key: 'quality_score' as const, bar: 'bg-gradient-to-r from-violet-400 to-violet-500', dot: 'bg-violet-500' },
-];
 
 function ScoreBar({ label, score, max = 3, barClass, dotClass }: { label: string; score: number; max?: number; barClass: string; dotClass: string }) {
   const pct = Math.min(100, (score / max) * 100);
@@ -82,19 +81,123 @@ function EngagementBadges({ engagement }: { engagement: NewsItem['engagement'] }
 }
 
 export default function NewsItemCard({ item, index, sourceKey }: { item: NewsItem; index: number; sourceKey: NewsSourceKey }) {
+  const { t } = useTranslation('news');
   const [expanded, setExpanded] = useState(false);
 
   const isTopItem = index < 3;
   const borderAccent = isTopItem ? 'border-amber-200/80 dark:border-amber-800/50' : 'border-border/60';
 
   // Build links based on source
-  const primaryUrl = item.link || (sourceKey === 'arxiv' ? `https://arxiv.org/abs/${item.id}` : '#');
-  const pdfUrl = item.pdf_link || (sourceKey === 'arxiv' ? `https://arxiv.org/pdf/${item.id}` : null);
+  const arxivId = item.id?.replace(/^https?:\/\/arxiv\.org\/abs\//, '') ?? '';
+  const primaryUrl = item.link || (sourceKey === 'arxiv' ? `https://arxiv.org/abs/${arxivId}` : '#');
+  const pdfUrl = item.pdf_link || (sourceKey === 'arxiv' ? `https://arxiv.org/pdf/${arxivId}` : null);
 
   const sourceBadgeLabel = sourceKey === 'arxiv' ? 'arXiv'
     : sourceKey === 'huggingface' ? 'HF'
     : sourceKey === 'x' ? 'X'
     : 'XHS';
+
+  const SCORE_COLORS = [
+    { label: t('card.relevance'), key: 'relevance_score' as const, bar: 'bg-gradient-to-r from-sky-400 to-sky-500', dot: 'bg-sky-500' },
+    { label: t('card.recency'), key: 'recency_score' as const, bar: 'bg-gradient-to-r from-emerald-400 to-emerald-500', dot: 'bg-emerald-500' },
+    { label: t('card.popularity'), key: 'popularity_score' as const, bar: 'bg-gradient-to-r from-amber-400 to-amber-500', dot: 'bg-amber-500' },
+    { label: t('card.quality'), key: 'quality_score' as const, bar: 'bg-gradient-to-r from-violet-400 to-violet-500', dot: 'bg-violet-500' },
+  ];
+
+  // XHS / X: compact card — cover image, title, abstract snippet, and link
+  if (sourceKey === 'xiaohongshu' || sourceKey === 'x') {
+    const coverUrl = item.media_urls?.[0];
+    return (
+      <article className={`group relative overflow-hidden rounded-[22px] border ${borderAccent} bg-card/85 shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg`}>
+        <a href={primaryUrl} target="_blank" rel="noopener noreferrer" className="block">
+          {coverUrl && (
+            <img src={coverUrl} alt="" className="w-full max-h-[260px] object-cover" />
+          )}
+          <div className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-sm font-semibold leading-snug text-foreground tracking-tight line-clamp-2 flex-1 min-w-0">{item.title}</h3>
+              <span className="flex-shrink-0 inline-flex items-center gap-1 rounded-lg border border-border/50 bg-background/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {sourceBadgeLabel} <ExternalLink className="h-2.5 w-2.5" />
+              </span>
+            </div>
+            {item.abstract && (
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground/70 line-clamp-3 whitespace-pre-line">{item.abstract}</p>
+            )}
+            {item.authors && (
+              <p className="mt-2 text-[11px] text-muted-foreground/60">@{item.authors}</p>
+            )}
+          </div>
+        </a>
+      </article>
+    );
+  }
+
+  // HuggingFace: paper card styled like HF Daily Papers
+  if (sourceKey === 'huggingface') {
+    const thumbnailUrl = item.media_urls?.[0];
+    const upvotes = item.engagement?.likes ?? 0;
+    const comments = item.engagement?.comments ?? 0;
+    return (
+      <article className="group relative overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+        {/* Thumbnail */}
+        <a href={primaryUrl} target="_blank" rel="noopener noreferrer" className="block">
+          {thumbnailUrl ? (
+            <div className="relative aspect-[16/9] overflow-hidden bg-muted/30">
+              <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
+              {item.submitted_by && (
+                <div className="absolute bottom-2 right-2 rounded-lg bg-black/60 px-2 py-1 text-[10px] text-white backdrop-blur-sm">
+                  {t('card.submittedBy', { name: item.submitted_by })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex aspect-[16/9] items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-900 dark:to-slate-800">
+              <FileText className="h-10 w-10 text-muted-foreground/20" />
+            </div>
+          )}
+        </a>
+
+        {/* Content */}
+        <div className="p-4">
+          <div className="flex gap-3">
+            {/* Upvote count */}
+            <div className="flex flex-col items-center pt-0.5">
+              <ArrowUp className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-semibold tabular-nums text-foreground">{upvotes}</span>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              {/* Title */}
+              <a href={primaryUrl} target="_blank" rel="noopener noreferrer"
+                className="text-sm font-semibold leading-snug text-foreground hover:text-primary transition-colors line-clamp-2">
+                {item.title}
+              </a>
+
+              {/* Organization badge + stats */}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {item.organization && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                    {item.organization}
+                  </span>
+                )}
+                {pdfUrl && (
+                  <a href={pdfUrl} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                    <FileText className="h-3 w-3" /> {t('card.pdf')}
+                  </a>
+                )}
+                {comments > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <MessageCircle className="h-3 w-3" /> {comments}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+    );
+  }
 
   return (
     <article className={`group relative overflow-hidden rounded-[22px] border ${borderAccent} bg-card/85 shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg`}>
@@ -132,20 +235,32 @@ export default function NewsItemCard({ item, index, sourceKey }: { item: NewsIte
             {pdfUrl && (
               <a href={pdfUrl} target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded-lg border border-border/50 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-border transition-colors">
-                PDF <ExternalLink className="h-2.5 w-2.5" />
+                {t('card.pdf')} <ExternalLink className="h-2.5 w-2.5" />
               </a>
             )}
           </div>
         </div>
 
-        {/* Title */}
-        <h3 className="mt-3.5 text-[15px] font-semibold leading-snug text-foreground tracking-tight">{item.title}</h3>
-
-        {/* Authors */}
-        <p className="mt-1.5 text-xs text-muted-foreground/80 line-clamp-1">{item.authors}</p>
-
-        {/* Engagement badges for social sources */}
-        <EngagementBadges engagement={item.engagement} />
+        {/* Title + cover thumbnail for social sources */}
+        <div className="mt-3.5 flex gap-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[15px] font-semibold leading-snug text-foreground tracking-tight">{item.title}</h3>
+            <p className="mt-1.5 text-xs text-muted-foreground/80 line-clamp-1">{item.authors}</p>
+            {item.abstract && (
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground/70 line-clamp-3">{item.abstract}</p>
+            )}
+            <EngagementBadges engagement={item.engagement} />
+          </div>
+          {item.media_urls && item.media_urls.length > 0 && (
+            <a href={primaryUrl} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
+              <img
+                src={item.media_urls[0]}
+                alt=""
+                className="h-20 w-20 rounded-xl object-cover border border-border/30 sm:h-24 sm:w-24"
+              />
+            </a>
+          )}
+        </div>
 
         {/* Tags */}
         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -173,13 +288,13 @@ export default function NewsItemCard({ item, index, sourceKey }: { item: NewsIte
           className="mt-3.5 flex items-center gap-1.5 text-xs font-medium text-primary/80 hover:text-primary transition-colors"
         >
           {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          {expanded ? 'Collapse' : 'Details & score breakdown'}
+          {expanded ? t('card.showLess') : t('card.showMore')}
         </button>
 
         {/* Expanded content */}
         {expanded && (
           <div className="mt-3.5 space-y-4 rounded-xl bg-muted/20 p-4 border border-border/30">
-            <p className="text-xs leading-[1.7] text-muted-foreground">{item.abstract}</p>
+            <p className="text-xs leading-[1.7] text-muted-foreground whitespace-pre-line">{item.abstract}</p>
 
             {/* Media images for social sources */}
             {item.media_urls && item.media_urls.length > 0 && (
@@ -191,7 +306,7 @@ export default function NewsItemCard({ item, index, sourceKey }: { item: NewsIte
             )}
 
             <div className="space-y-2">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70 mb-2">Score Breakdown</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70 mb-2">{t('card.scoreBreakdown')}</div>
               {SCORE_COLORS.map(({ label, key, bar, dot }) => (
                 <ScoreBar key={key} label={label} score={item[key] ?? 0} barClass={bar} dotClass={dot} />
               ))}
@@ -199,7 +314,7 @@ export default function NewsItemCard({ item, index, sourceKey }: { item: NewsIte
 
             {item.matched_keywords?.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] font-medium text-muted-foreground/70 mr-0.5">Matched keywords:</span>
+                <span className="text-[10px] font-medium text-muted-foreground/70 mr-0.5">{t('card.matchedKeywords')}</span>
                 {item.matched_keywords.map((kw) => (
                   <span key={kw} className="rounded-md bg-primary/8 px-2 py-0.5 text-[10px] font-medium text-primary/80 border border-primary/10">{kw}</span>
                 ))}

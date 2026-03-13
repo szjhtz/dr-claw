@@ -140,16 +140,6 @@ export default function SidebarHeader({
             </Button>
 
             <Button
-              variant={activeTab === 'skills' ? 'secondary' : 'outline'}
-              size="sm"
-              className="h-9 w-full justify-start rounded-xl"
-              onClick={onOpenSkills}
-            >
-              <Blocks className="h-4 w-4" />
-              {t('common:projectDashboard.skillsTitle')}
-            </Button>
-
-            <Button
               variant={activeTab === 'news' ? 'secondary' : 'outline'}
               size="sm"
               className="h-9 w-full justify-start rounded-xl"
@@ -157,6 +147,16 @@ export default function SidebarHeader({
             >
               <Newspaper className="h-4 w-4" />
               {t('common:tabs.news')}
+            </Button>
+
+            <Button
+              variant={activeTab === 'skills' ? 'secondary' : 'outline'}
+              size="sm"
+              className="h-9 w-full justify-start rounded-xl"
+              onClick={onOpenSkills}
+            >
+              <Blocks className="h-4 w-4" />
+              {t('common:projectDashboard.skillsTitle')}
             </Button>
           </div>
         )}
@@ -234,21 +234,21 @@ export default function SidebarHeader({
             </Button>
 
             <Button
-              variant={activeTab === 'skills' ? 'secondary' : 'outline'}
-              className="h-10 w-full justify-start rounded-xl"
-              onClick={onOpenSkills}
-            >
-              <Blocks className="h-4 w-4" />
-              {t('common:projectDashboard.skillsTitle')}
-            </Button>
-
-            <Button
               variant={activeTab === 'news' ? 'secondary' : 'outline'}
               className="h-10 w-full justify-start rounded-xl"
               onClick={onOpenNews}
             >
               <Newspaper className="h-4 w-4" />
               {t('common:tabs.news')}
+            </Button>
+
+            <Button
+              variant={activeTab === 'skills' ? 'secondary' : 'outline'}
+              className="h-10 w-full justify-start rounded-xl"
+              onClick={onOpenSkills}
+            >
+              <Blocks className="h-4 w-4" />
+              {t('common:projectDashboard.skillsTitle')}
             </Button>
           </div>
         )}

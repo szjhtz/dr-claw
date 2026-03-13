@@ -1,5 +1,6 @@
 import { Loader2, Sparkles } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import SourceFilterBar from './SourceFilterBar';
 import SourceSettingsDialog from './SourceSettingsDialog';
@@ -9,11 +10,11 @@ import type { NewsSourceKey } from './useNewsDashboardData';
 
 const ALL_SOURCES: NewsSourceKey[] = ['arxiv', 'huggingface', 'x', 'xiaohongshu'];
 
-const SOURCE_LABELS: Record<NewsSourceKey, string> = {
-  arxiv: 'arXiv',
-  huggingface: 'HuggingFace',
-  x: 'X',
-  xiaohongshu: 'XHS',
+const SOURCE_LABEL_KEYS: Record<NewsSourceKey, string> = {
+  arxiv: 'sources.arxiv',
+  huggingface: 'sources.huggingface',
+  x: 'sources.x',
+  xiaohongshu: 'sources.xiaohongshuShort',
 };
 
 const SOURCE_STAT_ACCENTS: Record<NewsSourceKey, string> = {
@@ -42,6 +43,7 @@ function StatCard({ label, value, accent }: { label: string; value: string | num
 }
 
 export default function NewsDashboard() {
+  const { t } = useTranslation('news');
   const {
     sources,
     configs,
@@ -49,11 +51,13 @@ export default function NewsDashboard() {
     isSearching,
     errors,
     configDirty,
+    searchLogs,
     isLoading,
     searchSource,
     searchAll,
     updateConfig,
     saveConfig,
+    clearResults,
   } = useNewsDashboardData();
 
   const [activeSources, setActiveSources] = useState<Set<NewsSourceKey>>(
@@ -91,7 +95,7 @@ export default function NewsDashboard() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <Loader2 className="h-7 w-7 animate-spin text-primary/60" />
-        <span className="text-sm text-muted-foreground">Loading research feed...</span>
+        <span className="text-sm text-muted-foreground">{t('status.loading')}</span>
       </div>
     );
   }
@@ -108,14 +112,14 @@ export default function NewsDashboard() {
             <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full border border-amber-200/70 bg-white/80 px-3 py-1 text-xs font-medium uppercase tracking-[0.24em] text-amber-700 shadow-sm dark:border-amber-800/60 dark:bg-slate-950/60 dark:text-amber-200">
                 <Sparkles className="h-3.5 w-3.5" />
-                Research News
+                {t('hero.badge')}
               </div>
 
               <h2 className="mt-4 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                Research Feed
+                {t('hero.title')}
               </h2>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
-                Discover the latest from arXiv, HuggingFace, X, and Xiaohongshu — automatically scored by relevance, recency, popularity, and quality.
+                {t('hero.description')}
               </p>
 
               <div className="mt-5">
@@ -125,8 +129,6 @@ export default function NewsDashboard() {
                   sources={sources}
                   isSearching={isSearching}
                   onSearchAll={handleSearchAll}
-                  onSearchSource={searchSource}
-                  onOpenSettings={setSettingsSource}
                   isSearchingAll={isSearchingAll}
                 />
               </div>
@@ -136,7 +138,7 @@ export default function NewsDashboard() {
               {ALL_SOURCES.map((key) => (
                 <StatCard
                   key={key}
-                  label={SOURCE_LABELS[key]}
+                  label={t(SOURCE_LABEL_KEYS[key])}
                   value={results[key]?.top_papers?.length ?? 0}
                   accent={SOURCE_STAT_ACCENTS[key]}
                 />
@@ -145,37 +147,28 @@ export default function NewsDashboard() {
           </div>
         </section>
 
-        {/* Section header */}
-        <section className="flex items-end justify-between gap-4">
-          <div>
-            <h3 className="text-xl font-semibold tracking-tight text-foreground">Results Feed</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Sorted by composite score — relevance, popularity, recency, and quality
-            </p>
-          </div>
-          <div className="hidden rounded-full border border-border/60 bg-background/70 px-4 py-2 text-sm text-muted-foreground shadow-sm backdrop-blur sm:block">
-            Results: {totalResults}
-          </div>
-        </section>
-
         <UnifiedFeed
           activeSources={activeSources}
           results={results}
           errors={errors}
           isSearching={isSearching}
+          searchLogs={searchLogs}
           onSearchSource={searchSource}
           onOpenSettings={setSettingsSource}
+          onClearSource={clearResults}
         />
 
         {/* Footer */}
         <footer className="flex items-center justify-center gap-2 pb-6 pt-2 text-[11px] text-muted-foreground/60">
           <span className="inline-flex items-center gap-1.5">
-            Powered by
+            {t('footer.poweredBy')}
             <a href="https://arxiv.org" target="_blank" rel="noopener noreferrer" className="font-medium text-muted-foreground/80 hover:text-foreground transition-colors">arXiv</a>
             <span>&middot;</span>
             <a href="https://huggingface.co" target="_blank" rel="noopener noreferrer" className="font-medium text-muted-foreground/80 hover:text-foreground transition-colors">HuggingFace</a>
             <span>&middot;</span>
-            <a href="https://www.semanticscholar.org" target="_blank" rel="noopener noreferrer" className="font-medium text-muted-foreground/80 hover:text-foreground transition-colors">Semantic Scholar</a>
+            <a href="https://x.com" target="_blank" rel="noopener noreferrer" className="font-medium text-muted-foreground/80 hover:text-foreground transition-colors">X</a>
+            <span>&middot;</span>
+            <a href="https://www.xiaohongshu.com" target="_blank" rel="noopener noreferrer" className="font-medium text-muted-foreground/80 hover:text-foreground transition-colors">{t('sources.xiaohongshu')}</a>
           </span>
         </footer>
       </div>
