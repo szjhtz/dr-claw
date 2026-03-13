@@ -558,6 +558,12 @@ def main() -> int:
             final_ids.add(item["id"])
             final_scored.append(item)
 
+    # Filter out invalid/empty entries
+    final_scored = [
+        p for p in final_scored
+        if p.get("title") and p["title"] != "(Untitled)"
+    ]
+
     # Sort by final score
     final_scored.sort(key=lambda x: x["final_score"], reverse=True)
 

@@ -1,5 +1,5 @@
 import { Loader2, Sparkles } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SourceFilterBar from './SourceFilterBar';
@@ -54,42 +54,19 @@ export default function NewsDashboard() {
     searchLogs,
     isLoading,
     searchSource,
-    searchAll,
     updateConfig,
     saveConfig,
     clearResults,
   } = useNewsDashboardData();
 
-  const [activeSources, setActiveSources] = useState<Set<NewsSourceKey>>(
-    new Set(['arxiv', 'huggingface', 'x', 'xiaohongshu'])
-  );
+  const [activeSource, setActiveSource] = useState<NewsSourceKey>('arxiv');
   const [settingsSource, setSettingsSource] = useState<NewsSourceKey | null>(null);
 
-  const toggleSource = useCallback((key: NewsSourceKey) => {
-    setActiveSources((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
+  const handleSearch = useCallback(() => {
+    searchSource(activeSource);
+  }, [searchSource, activeSource]);
 
-  const handleSearchAll = useCallback(() => {
-    searchAll(Array.from(activeSources));
-  }, [searchAll, activeSources]);
-
-  const isSearchingAll = Array.from(activeSources).some((k) => isSearching[k]);
-
-  const totalResults = useMemo(() => {
-    let total = 0;
-    for (const key of activeSources) {
-      total += results[key]?.top_papers?.length ?? 0;
-    }
-    return total;
-  }, [activeSources, results]);
+  const isSearchingActive = isSearching[activeSource];
 
   if (isLoading) {
     return (
@@ -124,12 +101,12 @@ export default function NewsDashboard() {
 
               <div className="mt-5">
                 <SourceFilterBar
-                  activeSources={activeSources}
-                  onToggleSource={toggleSource}
+                  activeSource={activeSource}
+                  onSelectSource={setActiveSource}
                   sources={sources}
                   isSearching={isSearching}
-                  onSearchAll={handleSearchAll}
-                  isSearchingAll={isSearchingAll}
+                  onSearch={handleSearch}
+                  isSearchingActive={isSearchingActive}
                 />
               </div>
             </div>
@@ -148,7 +125,7 @@ export default function NewsDashboard() {
         </section>
 
         <UnifiedFeed
-          activeSources={activeSources}
+          activeSource={activeSource}
           results={results}
           errors={errors}
           isSearching={isSearching}

@@ -42,6 +42,28 @@ export type NewsItem = {
   organization?: string;
 };
 
+const VIDEO_EXTENSIONS = /\.(mp4|webm|mov|m3u8)(\?|$)/i;
+
+function isVideoUrl(url: string): boolean {
+  return VIDEO_EXTENSIONS.test(url) || url.includes('/video/');
+}
+
+function MediaPreview({ url, className }: { url: string; className?: string }) {
+  if (isVideoUrl(url)) {
+    return (
+      <video
+        src={url}
+        className={className}
+        controls
+        muted
+        preload="metadata"
+        playsInline
+      />
+    );
+  }
+  return <img src={url} alt="" className={className} />;
+}
+
 function ScoreBar({ label, score, max = 3, barClass, dotClass }: { label: string; score: number; max?: number; barClass: string; dotClass: string }) {
   const pct = Math.min(100, (score / max) * 100);
   return (
@@ -111,7 +133,7 @@ export default function NewsItemCard({ item, index, sourceKey }: { item: NewsIte
       <article className={`group relative overflow-hidden rounded-[22px] border ${borderAccent} bg-card/85 shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg`}>
         <a href={primaryUrl} target="_blank" rel="noopener noreferrer" className="block">
           {coverUrl && (
-            <img src={coverUrl} alt="" className="w-full max-h-[260px] object-cover" />
+            <MediaPreview url={coverUrl} className="w-full max-h-[260px] object-cover" />
           )}
           <div className="p-4">
             <div className="flex items-start justify-between gap-2">

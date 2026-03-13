@@ -1,6 +1,4 @@
 import {
-  ChevronDown,
-  ChevronRight,
   Info,
   Loader2,
   RefreshCw,
@@ -8,7 +6,7 @@ import {
   Terminal,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import NewsItemCard from './NewsItemCard';
@@ -42,8 +40,6 @@ const SOURCE_BADGE_COLORS: Record<NewsSourceKey, string> = {
   x: 'bg-gray-200 text-gray-700 dark:bg-gray-800/50 dark:text-gray-300',
   xiaohongshu: 'bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-300',
 };
-
-const ALL_SOURCES: NewsSourceKey[] = ['arxiv', 'huggingface', 'x', 'xiaohongshu'];
 
 function SetupGuide({ sourceKey, onOpenSettings }: { sourceKey: NewsSourceKey; onOpenSettings: (key: NewsSourceKey) => void }) {
   const { t } = useTranslation('news');
@@ -106,7 +102,7 @@ function LogPanel({ logs }: { logs: string[] }) {
 }
 
 export default function UnifiedFeed({
-  activeSources,
+  activeSource,
   results,
   errors,
   isSearching,
@@ -115,7 +111,7 @@ export default function UnifiedFeed({
   onOpenSettings,
   onClearSource,
 }: {
-  activeSources: Set<NewsSourceKey>;
+  activeSource: NewsSourceKey;
   results: Record<NewsSourceKey, SearchResults>;
   errors: Record<NewsSourceKey, string | null>;
   isSearching: Record<NewsSourceKey, boolean>;
@@ -125,143 +121,108 @@ export default function UnifiedFeed({
   onClearSource: (key: NewsSourceKey) => void;
 }) {
   const { t } = useTranslation('news');
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const toggleCollapse = (key: NewsSourceKey) => {
-    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
 
-  const activeSourceKeys = ALL_SOURCES.filter((k) => activeSources.has(k));
-
-  if (activeSourceKeys.length === 0) {
-    return (
-      <div className="rounded-[28px] border border-border/60 bg-card/70 p-10 text-center">
-        <p className="text-sm text-muted-foreground">{t('status.noActiveSources')}</p>
-      </div>
-    );
-  }
+  const key = activeSource;
+  const label = t(SOURCE_LABEL_KEYS[key]);
+  const papers = (results[key]?.top_papers ?? []).filter(
+    (p) => p.title && p.title !== '(Untitled)'
+  );
+  const error = errors[key];
+  const searching = isSearching[key];
+  const totalFound = results[key]?.total_found ?? 0;
 
   return (
     <div className="flex flex-col gap-6">
-      {activeSourceKeys.map((key) => {
-        const label = t(SOURCE_LABEL_KEYS[key]);
-        const papers = results[key]?.top_papers ?? [];
-        const error = errors[key];
-        const searching = isSearching[key];
-        const totalFound = results[key]?.total_found ?? 0;
-        const isCollapsed = collapsed[key] ?? true;
-
-        return (
-          <section
-            key={key}
-            className={`rounded-[28px] border ${SOURCE_BORDER_COLORS[key]} bg-card/80 shadow-sm backdrop-blur overflow-hidden`}
-          >
-            {/* Source header — clickable to toggle */}
-            <button
-              type="button"
-              onClick={() => toggleCollapse(key)}
-              className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left hover:bg-muted/20 transition-colors"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                {isCollapsed ? (
-                  <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                )}
-                <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${SOURCE_BADGE_COLORS[key]}`}>
-                  <SourceIcon sourceKey={key} className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className={`text-sm font-semibold ${SOURCE_HEADER_COLORS[key]}`}>{label}</h3>
-                  <p className="text-[11px] text-muted-foreground">
-                    {papers.length > 0
-                      ? (totalFound > 0
-                          ? t('status.resultsWithTotal', { count: papers.length, total: totalFound })
-                          : t('status.resultsCount', { count: papers.length }))
-                      : t('status.noResults')}
-                  </p>
-                </div>
+      <section
+        className={`rounded-[28px] border ${SOURCE_BORDER_COLORS[key]} bg-card/80 shadow-sm backdrop-blur overflow-hidden`}
+      >
+        {/* Source header */}
+        <div className="flex w-full items-center justify-between gap-3 px-5 py-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${SOURCE_BADGE_COLORS[key]}`}>
+              <SourceIcon sourceKey={key} className="h-4.5 w-4.5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className={`text-sm font-semibold ${SOURCE_HEADER_COLORS[key]}`}>{label}</h3>
+              <p className="text-[11px] text-muted-foreground">
+                {papers.length > 0
+                  ? (totalFound > 0
+                      ? t('status.resultsWithTotal', { count: papers.length, total: totalFound })
+                      : t('status.resultsCount', { count: papers.length }))
+                  : t('status.noResults')}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {searching && (
+              <div className="flex items-center gap-1.5 rounded-lg bg-primary/5 px-2.5 py-1 text-xs text-primary dark:bg-primary/10">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t('actions.searching')}
               </div>
-              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                {searching && (
-                  <div className="flex items-center gap-1.5 rounded-lg bg-primary/5 px-2.5 py-1 text-xs text-primary dark:bg-primary/10">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    {t('actions.searching')}
-                  </div>
-                )}
-                <button
-                  onClick={() => onOpenSettings(key)}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-                >
-                  <Settings2 className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">{t('actions.settings')}</span>
-                </button>
-                <button
-                  onClick={() => onSearchSource(key)}
-                  disabled={searching}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors disabled:opacity-40"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">{t('actions.refresh')}</span>
-                </button>
-                {papers.length > 0 && (
-                  <button
-                    onClick={() => onClearSource(key)}
-                    disabled={searching}
-                    className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-40"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{t('actions.clear')}</span>
-                  </button>
-                )}
-              </div>
-            </button>
-
-            {/* Collapsible content */}
-            {!isCollapsed && (
-              <>
-                {/* Search progress logs */}
-                {(searching || (searchLogs[key]?.length > 0)) && <LogPanel logs={searchLogs[key] || []} />}
-
-                {/* Error */}
-                {error && (
-                  <div className="mx-5 mb-4 flex items-center gap-3 rounded-xl border border-red-200/80 bg-red-50/80 p-3 text-xs text-red-700 dark:border-red-800/50 dark:bg-red-950/30 dark:text-red-300">
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                {/* Results grid */}
-                {papers.length > 0 ? (
-                  <div className={`max-h-[1200px] overflow-y-auto grid gap-4 p-5 pt-0 ${
-                    key === 'huggingface'
-                      ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
-                      : 'grid-cols-1 xl:grid-cols-2'
-                  }`}>
-                    {papers.map((item, index) => (
-                      <NewsItemCard key={item.id} item={item} index={index} sourceKey={key} />
-                    ))}
-                  </div>
-                ) : !searching && !error ? (
-                  <div className="flex flex-col gap-4 px-5 pb-5">
-                    <SetupGuide sourceKey={key} onOpenSettings={onOpenSettings} />
-                    <div className="flex flex-col items-center justify-center gap-3 py-4 text-center">
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">{t('status.noResults')}</p>
-                        <p className="mt-1 text-xs text-muted-foreground/60">{t('status.noResultsHint')}</p>
-                      </div>
-                      <button
-                        onClick={() => onSearchSource(key)}
-                        className="flex items-center gap-1.5 rounded-xl border border-border/50 bg-background/80 px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" /> {t('actions.startSearch')}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </>
             )}
-          </section>
-        );
-      })}
+            <button
+              onClick={() => onOpenSettings(key)}
+              className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t('actions.settings')}</span>
+            </button>
+            <button
+              onClick={() => onSearchSource(key)}
+              disabled={searching}
+              className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors disabled:opacity-40"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t('actions.refresh')}</span>
+            </button>
+            {papers.length > 0 && (
+              <button
+                onClick={() => onClearSource(key)}
+                disabled={searching}
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-40"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{t('actions.clear')}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Search progress logs */}
+        {(searching || (searchLogs[key]?.length > 0)) && <LogPanel logs={searchLogs[key] || []} />}
+
+        {/* Error */}
+        {error && (
+          <div className="mx-5 mb-4 flex items-center gap-3 rounded-xl border border-red-200/80 bg-red-50/80 p-3 text-xs text-red-700 dark:border-red-800/50 dark:bg-red-950/30 dark:text-red-300">
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Results grid */}
+        {papers.length > 0 ? (
+          <div className="max-h-[1200px] overflow-y-auto grid gap-4 p-5 pt-0 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+            {papers.map((item, index) => (
+              <NewsItemCard key={item.id} item={item} index={index} sourceKey={key} />
+            ))}
+          </div>
+        ) : !searching && !error ? (
+          <div className="flex flex-col gap-4 px-5 pb-5">
+            <SetupGuide sourceKey={key} onOpenSettings={onOpenSettings} />
+            <div className="flex flex-col items-center justify-center gap-3 py-4 text-center">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">{t('status.noResults')}</p>
+                <p className="mt-1 text-xs text-muted-foreground/60">{t('status.noResultsHint')}</p>
+              </div>
+              <button
+                onClick={() => onSearchSource(key)}
+                className="flex items-center gap-1.5 rounded-xl border border-border/50 bg-background/80 px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> {t('actions.startSearch')}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
