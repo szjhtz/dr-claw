@@ -320,8 +320,8 @@ export default function ChatComposer({
               </svg>
             </button>
 
-            <div className="absolute right-16 sm:right-16 top-1/2 transform -translate-y-1/2" style={{ display: 'none' }}>
-              <MicButton onTranscript={onTranscript} className="w-10 h-10 sm:w-10 sm:h-10" />
+            <div className="absolute right-14 top-1/2 transform -translate-y-1/2">
+              <MicButton onTranscript={onTranscript} className="!w-9 !h-9" />
             </div>
 
             <button
@@ -350,6 +350,7 @@ export default function ChatComposer({
               {sendByCtrlEnter ? t('input.hintText.ctrlEnter') : t('input.hintText.enter')}
             </div>
           </div>
+
         </div>
       </form>}
     </div>
