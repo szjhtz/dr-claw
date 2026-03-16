@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { X, Plus, Settings as SettingsIcon, Shield, AlertTriangle, Moon, Sun, Server, Edit3, Trash2, Globe, Terminal, Zap, FolderOpen, LogIn, Key, GitBranch, Check } from 'lucide-react';
+import { X, Plus, Settings as SettingsIcon, Shield, AlertTriangle, Moon, Sun, Server, Edit3, Trash2, Globe, Terminal, Zap, FolderOpen, LogIn, Key, GitBranch, Check, Mail } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import CredentialsSettings from './CredentialsSettings';
@@ -14,11 +14,12 @@ import { isTelemetryEnabled, setTelemetryEnabled } from '../utils/telemetry';
 // New settings components
 import AgentListItem from './settings/AgentListItem';
 import AccountContent from './settings/AccountContent';
+import EmailSettingsContent from './settings/EmailSettingsContent';
 import PermissionsContent from './settings/PermissionsContent';
 import McpServersContent from './settings/McpServersContent';
 import LanguageSelector from './LanguageSelector';
 
-const VALID_SETTINGS_TABS = new Set(['agents', 'appearance', 'git', 'api']);
+const VALID_SETTINGS_TABS = new Set(['agents', 'email', 'appearance', 'git', 'api']);
 
 function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
   const { isDarkMode, toggleDarkMode } = useTheme();
@@ -64,7 +65,7 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
   );
   const [jsonValidationError, setJsonValidationError] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('claude'); // 'claude', 'cursor', or 'codex'
-  const [selectedCategory, setSelectedCategory] = useState('account'); // 'account', 'permissions', or 'mcp'
+  const [selectedCategory, setSelectedCategory] = useState('account'); // 'account', 'email', 'permissions', or 'mcp'
 
   // Code Editor settings
   const [codeEditorTheme, setCodeEditorTheme] = useState(() =>
@@ -1100,6 +1101,17 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
                 {t('mainTabs.agents')}
               </button>
               <button
+                onClick={() => setActiveTab('email')}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'email'
+                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Mail className="w-4 h-4 inline mr-2" />
+                {t('mainTabs.email')}
+              </button>
+              <button
                 onClick={() => setActiveTab('appearance')}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'appearance'
@@ -1464,6 +1476,9 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
 
             {/* Git Tab */}
             {activeTab === 'git' && <GitSettings />}
+
+            {/* Email Tab */}
+            {activeTab === 'email' && <EmailSettingsContent />}
 
             {/* Agents Tab */}
             {activeTab === 'agents' && (
