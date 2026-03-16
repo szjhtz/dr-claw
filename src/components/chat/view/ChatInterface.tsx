@@ -276,9 +276,12 @@ function ChatInterface({
     };
   }, [canAbortSession, handleAbortSession, isLoading]);
 
+  const prevIsLoadingForProcessingRef = useRef(false);
   useEffect(() => {
     const processingSessionId = selectedSession?.id || currentSessionId;
-    if (processingSessionId && isLoading && onSessionProcessing) {
+    const loadingJustStarted = isLoading && !prevIsLoadingForProcessingRef.current;
+    prevIsLoadingForProcessingRef.current = isLoading;
+    if (processingSessionId && loadingJustStarted && onSessionProcessing) {
       onSessionProcessing(processingSessionId);
     }
   }, [currentSessionId, isLoading, onSessionProcessing, selectedSession?.id]);

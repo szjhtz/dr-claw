@@ -368,7 +368,11 @@ export function useProjectsState({
     (project: Project) => {
       setSelectedProject(project);
       setSelectedSession(null);
-      setActiveTab((currentTab) => (currentTab === 'dashboard' ? 'chat' : currentTab));
+      setActiveTab((currentTab) =>
+        currentTab === 'dashboard' || currentTab === 'news' || currentTab === 'skills'
+          ? 'chat'
+          : currentTab,
+      );
       navigate('/');
 
       if (isMobile) {
@@ -448,6 +452,17 @@ export function useProjectsState({
     setSelectedProject(null);
     setSelectedSession(null);
     setActiveTab('skills');
+    navigate('/');
+
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
+  }, [isMobile, navigate]);
+
+  const handleOpenNews = useCallback(() => {
+    setSelectedProject(null);
+    setSelectedSession(null);
+    setActiveTab('news');
     navigate('/');
 
     if (isMobile) {
@@ -556,6 +571,7 @@ export function useProjectsState({
       activeTab,
       onOpenDashboard: handleOpenDashboard,
       onOpenSkills: handleOpenSkills,
+      onOpenNews: handleOpenNews,
     }),
     [
       handleNewSession,
@@ -571,6 +587,7 @@ export function useProjectsState({
       activeTab,
       handleOpenDashboard,
       handleOpenSkills,
+      handleOpenNews,
       settingsInitialTab,
       selectedProject,
       selectedSession,
@@ -601,6 +618,7 @@ export function useProjectsState({
     handleSessionSelect,
     handleOpenDashboard,
     handleOpenSkills,
+    handleOpenNews,
     handleNewSession,
     handleSessionDelete,
     handleProjectDelete,

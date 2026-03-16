@@ -286,6 +286,24 @@ export const api = {
       body: JSON.stringify({ dirPath }),
     }),
 
+  // News dashboard endpoints
+  news: {
+    getSources: () => authenticatedFetch('/api/news/sources'),
+    getConfig: (source = 'arxiv') => authenticatedFetch(`/api/news/config/${source}`),
+    updateConfig: (source, config) =>
+      authenticatedFetch(`/api/news/config/${source}`, {
+        method: 'PUT',
+        body: JSON.stringify(config),
+      }),
+    search: (source = 'arxiv') =>
+      authenticatedFetch(`/api/news/search/${source}`, { method: 'POST' }),
+    getResults: (source = 'arxiv') => authenticatedFetch(`/api/news/results/${source}`),
+    /** Poll search progress logs for a source. */
+    getLogs: (source) => authenticatedFetch(`/api/news/logs/${source}`),
+    /** Trigger xhs login (returns JSON with success, nickname, logs). */
+    xhsLogin: () => authenticatedFetch('/api/news/xhs-login', { method: 'POST' }),
+  },
+
   // Generic GET method for any endpoint
   get: (endpoint) => authenticatedFetch(`/api${endpoint}`),
 

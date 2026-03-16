@@ -9,6 +9,7 @@ import ComputePanel from '../../ComputePanel';
 import ErrorBoundary from '../../ErrorBoundary';
 import SurveyPage from '../../survey/view/SurveyPage';
 import ProjectDashboard from '../../project-dashboard/view/ProjectDashboard';
+import NewsDashboard from '../../news-dashboard/view/NewsDashboard';
 
 import MainContentHeader from './subcomponents/MainContentHeader';
 import MainContentStateView from './subcomponents/MainContentStateView';
@@ -131,6 +132,26 @@ function MainContent({
 
         <div className="flex-1 min-h-0 overflow-hidden">
           <SkillsDashboard />
+        </div>
+      </div>
+    );
+  }
+
+  if (activeTab === 'news') {
+    return (
+      <div className="h-full flex flex-col">
+        <MainContentHeader
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          selectedProject={null}
+          selectedSession={null}
+          shouldShowTasksTab={shouldShowTasksTab}
+          isMobile={isMobile}
+          onMenuClick={onMenuClick}
+        />
+
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <NewsDashboard />
         </div>
       </div>
     );

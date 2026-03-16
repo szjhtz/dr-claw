@@ -42,6 +42,7 @@ export type SidebarProps = {
   activeTab: AppTab;
   onOpenDashboard: () => void;
   onOpenSkills: () => void;
+  onOpenNews: () => void;
 };
 
 export type SessionViewModel = {

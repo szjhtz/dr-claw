@@ -141,3 +141,11 @@ backup/
 
 # Pipeline runtime (local state)
 .pipeline/
+
+# Server runtime data
+server/data/
+
+# Search result files
+xhs_results.json
+*_results.json
+__pycache__

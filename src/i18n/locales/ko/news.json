@@ -1,0 +1,120 @@
+{
+  "hero": {
+    "badge": "Research News",
+    "title": "Research Feed",
+    "description": "Discover the latest from arXiv, HuggingFace, X, and Xiaohongshu — automatically scored by relevance, recency, popularity, and quality."
+  },
+  "sources": {
+    "arxiv": "arXiv",
+    "huggingface": "HuggingFace",
+    "huggingfaceFeed": "HF Daily Papers",
+    "x": "X",
+    "xiaohongshu": "Xiaohongshu",
+    "xiaohongshuShort": "XHS"
+  },
+  "actions": {
+    "settings": "Settings",
+    "refresh": "Update",
+    "clear": "Clear",
+    "searchAll": "Fetch Latest",
+    "searching": "Searching...",
+    "startSearch": "Start Search",
+    "openSettings": "Open Settings",
+    "save": "Save Changes",
+    "close": "Close"
+  },
+  "status": {
+    "loading": "Loading research feed...",
+    "noActiveSources": "No active sources selected. Toggle sources above to see results.",
+    "noResults": "No results yet",
+    "noResultsHint": "Complete the setup above, then click \"Start Search\"",
+    "resultsCount": "{{count}} results",
+    "resultsWithTotal": "{{count}} results from {{total}} scanned"
+  },
+  "card": {
+    "abstract": "Abstract",
+    "showMore": "Details & score breakdown",
+    "showLess": "Collapse",
+    "relevance": "Relevance",
+    "recency": "Recency",
+    "popularity": "Popularity",
+    "quality": "Quality",
+    "final": "Final",
+    "pdf": "PDF",
+    "submittedBy": "Submitted by {{name}}",
+    "comments": "comments",
+    "scoreBreakdown": "Score Breakdown",
+    "matchedKeywords": "Matched keywords:"
+  },
+  "setup": {
+    "title": "Setup Guide",
+    "arxiv": {
+      "steps": [
+        "Click \"Settings\" to configure your research domains and keywords",
+        "Add arXiv categories (e.g. cs.AI, cs.LG) to filter relevant papers",
+        "Adjust \"Results to show\" and \"Max results to scan\" as needed",
+        "Click \"Start Search\" to fetch the latest papers"
+      ]
+    },
+    "huggingface": {
+      "steps": [
+        "HuggingFace Daily Papers are fetched automatically — no configuration needed",
+        "Click \"Start Search\" to fetch today's trending papers",
+        "Optionally add research domains in \"Settings\" to filter by your interests"
+      ]
+    },
+    "x": {
+      "steps": [
+        "Make sure you are logged into X (Twitter) in your browser (Chrome, Arc, Edge, or Firefox)",
+        "twitter-cli will automatically extract your browser cookies — no API key needed",
+        "Click \"Settings\" to configure search queries and tracked accounts",
+        "Click \"Start Search\" to fetch the latest tweets"
+      ],
+      "note": "If you haven't installed twitter-cli yet, run: uv tool install twitter-cli"
+    },
+    "xiaohongshu": {
+      "steps": [
+        "Make sure you are logged into xiaohongshu.com in your browser",
+        "Click \"Settings\" and then \"Extract Browser Cookie\" to authenticate",
+        "Configure your search keywords in Settings",
+        "Click \"Start Search\" to fetch the latest posts"
+      ],
+      "note": "If you haven't installed xiaohongshu-cli yet, run: uv tool install xiaohongshu-cli"
+    }
+  },
+  "footer": {
+    "poweredBy": "Powered by"
+  },
+  "settings": {
+    "arxivTitle": "arXiv Settings",
+    "huggingfaceTitle": "HuggingFace Settings",
+    "xTitle": "X (Twitter) Settings",
+    "xiaohongshuTitle": "Xiaohongshu Settings",
+    "authentication": "Authentication",
+    "xAuthDescription": "twitter-cli automatically extracts cookies from your browser (Chrome, Arc, Edge, Firefox). Make sure you are logged into X/Twitter in your browser. No API key needed.",
+    "browserCookieAuth": "Browser Cookie Authentication",
+    "browserCookieDescription": "Automatically extract cookies from your browser. Make sure you are logged into xiaohongshu.com in Chrome, Arc, Edge, or Firefox first.",
+    "extractBrowserCookie": "Extract Browser Cookie",
+    "extracting": "Extracting...",
+    "cookieSuccess": "Cookie extraction successful!",
+    "cookieSuccessWithName": "Cookie extraction successful! Logged in as {{nickname}}",
+    "cookieFailure": "Login failed. Make sure you are logged into xiaohongshu.com in your browser.",
+    "loginFailed": "Login failed",
+    "searchQueries": "Search Queries (comma-separated)",
+    "searchQueriesPlaceholder": "LLM, AI agents, foundation model...",
+    "trackedAccounts": "Tracked Accounts (comma-separated handles)",
+    "trackedAccountsPlaceholder": "@kaboroevich, @_jasonwei, @ylaboratory...",
+    "searchKeywords": "Search Keywords (comma-separated)",
+    "searchKeywordsPlaceholder": "大模型, AI论文, 人工智能...",
+    "resultsToShow": "Results to show",
+    "maxArxivResults": "Max arXiv results to scan",
+    "researchDomains": "Research Domains",
+    "newDomainPlaceholder": "New domain name...",
+    "addDomain": "Add Domain",
+    "priority": "Priority",
+    "keywords": "Keywords",
+    "addPlaceholder": "Add...",
+    "arxivCategories": "arXiv Categories",
+    "credentialRequired": "Credential required"
+  }
+}

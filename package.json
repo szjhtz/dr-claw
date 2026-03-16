@@ -25,7 +25,7 @@
   },
   "scripts": {
     "dev": "concurrently --kill-others \"npm run server\" \"npm run client\"",
-    "server": "node --watch-path=./server server/index.js",
+    "server": "node --watch-path=./server/routes --watch-path=./server/middleware --watch-path=./server/database --watch-path=./server/utils --watch-path=./server/constants --watch-path=./server/index.js server/index.js",
     "client": "vite --host",
     "build": "vite build",
     "preview": "vite preview",
@@ -33,7 +33,7 @@
     "start": "npm run build && npm run server",
     "release": "./release.sh",
     "prepublishOnly": "npm run build",
-    "postinstall": "node scripts/fix-node-pty.js"
+    "postinstall": "node scripts/fix-node-pty.js && node scripts/install-python-tools.js"
   },
   "keywords": [
     "claude code",

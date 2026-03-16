@@ -19,6 +19,7 @@ type SidebarContentProps = {
   activeTab: AppTab;
   onOpenDashboard: () => void;
   onOpenSkills: () => void;
+  onOpenNews: () => void;
   onCreateProject: () => void;
   onCollapseSidebar: () => void;
   updateAvailable: boolean;
@@ -44,6 +45,7 @@ export default function SidebarContent({
   activeTab,
   onOpenDashboard,
   onOpenSkills,
+  onOpenNews,
   onCreateProject,
   onCollapseSidebar,
   updateAvailable,
@@ -73,6 +75,7 @@ export default function SidebarContent({
         activeTab={activeTab}
         onOpenDashboard={onOpenDashboard}
         onOpenSkills={onOpenSkills}
+        onOpenNews={onOpenNews}
         onCreateProject={onCreateProject}
         onCollapseSidebar={onCollapseSidebar}
         t={t}

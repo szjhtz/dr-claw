@@ -1055,6 +1055,9 @@ export function useChatRealtimeHandlers({
           setIsLoading(true);
           setCanAbortSession(true);
           onSessionProcessing?.(statusSessionId);
+        } else if (isCurrentSession && latestMessage.isProcessing === false) {
+          clearLoadingIndicators();
+          onSessionNotProcessing?.(statusSessionId);
         }
         break;
       }
@@ -1070,9 +1073,9 @@ export function useChatRealtimeHandlers({
             {
               requestId,
               toolName,
-              toolInput,
+              input: toolInput,
               sessionId: latestMessage.sessionId || currentSessionId,
-              timestamp: new Date(),
+              receivedAt: new Date(),
             },
           ];
         });

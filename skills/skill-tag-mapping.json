@@ -113,7 +113,12 @@
     "tensorboard": { "zh": "类别: 基础设施与运维", "en": "Category: Infra & Ops", "ko": "카테고리: 인프라 및 운영" },
     "weights-and-biases": { "zh": "类别: 基础设施与运维", "en": "Category: Infra & Ops", "ko": "카테고리: 인프라 및 운영" },
     "langsmith": { "zh": "类别: 基础设施与运维", "en": "Category: Infra & Ops", "ko": "카테고리: 인프라 및 운영" },
-    "phoenix": { "zh": "类别: 基础设施与运维", "en": "Category: Infra & Ops", "ko": "카테고리: 인프라 및 운영" }
+    "phoenix": { "zh": "类别: 基础设施与运维", "en": "Category: Infra & Ops", "ko": "카테고리: 인프라 및 운영" },
+
+    "research-news": { "zh": "阶段: 论文发现", "en": "Stage: Paper Discovery", "ko": "단계: 논문 탐색" },
+    "paper-analyzer": { "zh": "阶段: 论文分析", "en": "Stage: Paper Analysis", "ko": "단계: 논문 분석" },
+    "paper-image-extractor": { "zh": "阶段: 图片提取", "en": "Stage: Image Extraction", "ko": "단계: 이미지 추출" },
+    "paper-finder": { "zh": "阶段: 论文搜索", "en": "Stage: Paper Search", "ko": "단계: 논문 검색" }
   },
   "domainOverrides": {
     "accelerate": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" },
@@ -211,7 +216,12 @@
     "tensorboard": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" },
     "weights-and-biases": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" },
     "langsmith": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" },
-    "phoenix": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" }
+    "phoenix": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" },
+
+    "research-news": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" },
+    "paper-analyzer": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" },
+    "paper-image-extractor": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" },
+    "paper-finder": { "zh": "领域: cs", "en": "Domain: cs", "ko": "영역: cs" }
   },
   "platformNativeSkills": [
     "bioinformatics-init-analysis",
