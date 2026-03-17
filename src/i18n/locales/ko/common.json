@@ -259,7 +259,11 @@
     "deleteFile": "삭제",
     "confirmDelete": "\"{{name}}\"을(를) 삭제하시겠습니까?",
     "deleteSuccess": "삭제 완료",
-    "uploadToFolder": "이 폴더에 업로드"
+    "uploadToFolder": "이 폴더에 업로드",
+    "askAboutFile": "이 파일에 대해 묻기",
+    "askAboutDirectory": "이 폴더에 대해 묻기",
+    "askAboutFilePrompt": "파일 `{{path}}`를 설명해 주세요. 이 파일은 무엇을 하고, 이 프로젝트에서 어떻게 사용되며, 수정하기 전에 무엇을 알아야 하나요?",
+    "askAboutDirectoryPrompt": "폴더 `{{path}}`를 설명해 주세요. 이 폴더의 목적은 무엇이고, 안에 중요한 파일이나 하위 모듈은 무엇이며, 이 프로젝트에서 어떤 역할을 하나요?"
   },
   "projectWizard": {
     "title": "새 프로젝트 생성",

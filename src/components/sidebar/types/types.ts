@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { AppTab, LoadingProgress, Project, ProjectSession, SessionProvider } from '../../../types/app';
+import type { AppTab, LoadingProgress, Project, ProjectCreationOptions, ProjectSession, SessionMode, SessionProvider } from '../../../types/app';
 
 export type ProjectSortOrder = 'name' | 'date';
 
@@ -28,7 +28,7 @@ export type SidebarProps = {
   selectedSession: ProjectSession | null;
   onProjectSelect: (project: Project) => void;
   onSessionSelect: (session: ProjectSession) => void;
-  onNewSession: (project: Project) => void;
+  onNewSession: (project: Project, mode?: SessionMode) => void;
   onSessionDelete?: (sessionId: string) => void;
   onProjectDelete?: (projectName: string) => void;
   isLoading: boolean;
@@ -43,6 +43,8 @@ export type SidebarProps = {
   onOpenDashboard: () => void;
   onOpenSkills: () => void;
   onOpenNews: () => void;
+  onImportedProjectCreated?: (project: Project, options?: ProjectCreationOptions) => void;
+  newSessionMode?: SessionMode;
 };
 
 export type SessionViewModel = {
@@ -53,6 +55,7 @@ export type SessionViewModel = {
   sessionName: string;
   sessionTime: string;
   messageCount: number;
+  mode: SessionMode;
 };
 
 export type MCPServerStatus = {

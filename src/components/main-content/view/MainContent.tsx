@@ -53,7 +53,12 @@ function MainContent({
   externalMessageUpdate,
   pendingAutoIntake,
   clearPendingAutoIntake,
+  importedProjectAnalysisPrompt,
+  clearImportedProjectAnalysisPrompt,
   onProjectSelect,
+  onStartWorkspaceQa,
+  newSessionMode,
+  onNewSessionModeChange,
 }: MainContentProps) {
   const { preferences } = useUiPreferences();
   const { autoExpandTools, showRawParameters, showThinking, autoScrollToBottom, sendByCtrlEnter } = preferences;
@@ -202,13 +207,21 @@ function MainContent({
                 onShowAllTasks={() => setActiveTab('researchlab')}
                 pendingAutoIntake={pendingAutoIntake}
                 clearPendingAutoIntake={clearPendingAutoIntake}
+                importedProjectAnalysisPrompt={importedProjectAnalysisPrompt}
+                clearImportedProjectAnalysisPrompt={clearImportedProjectAnalysisPrompt}
+                newSessionMode={newSessionMode}
+                onNewSessionModeChange={onNewSessionModeChange}
               />
             </ErrorBoundary>
           </div>
 
           {activeTab === 'files' && (
             <div className="h-full overflow-hidden">
-              <FileTree selectedProject={selectedProject} onFileOpen={handleFileOpen} />
+              <FileTree
+                selectedProject={selectedProject}
+                onFileOpen={handleFileOpen}
+                onStartWorkspaceQa={onStartWorkspaceQa}
+              />
             </div>
           )}
 

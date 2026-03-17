@@ -65,6 +65,12 @@ export default function SidebarSessionItem({
     onDeleteSession(project.name, session.id, sessionView.sessionName, session.__provider);
   };
 
+  const modeBadgeLabel =
+    sessionView.mode === 'workspace_qa' ? t('sessions.mode.workspaceQa') : t('sessions.mode.research');
+
+  const metadataRowClassName = 'flex items-center gap-1 mt-0.5 min-w-0';
+  const rightMetaClassName = 'ml-auto flex items-center gap-1.5 flex-shrink-0';
+
   return (
     <div className="group relative">
       {sessionView.isActive && (
@@ -96,19 +102,22 @@ export default function SidebarSessionItem({
 
             <div className="min-w-0 flex-1">
               <div className="text-xs font-medium truncate text-foreground">{sessionView.sessionName}</div>
-              <div className="flex items-center gap-1 mt-0.5">
+              <div className={metadataRowClassName}>
                 <Clock className="w-2.5 h-2.5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">
                   {formatTimeAgo(sessionView.sessionTime, currentTime, t)}
                 </span>
-                {sessionView.messageCount > 0 && (
-                  <Badge variant="secondary" className="text-xs px-1 py-0 ml-auto">
+                <div className={rightMetaClassName}>
+                  <Badge variant="secondary" className="text-xs px-1 py-0 min-w-[1.5rem] justify-center">
                     {sessionView.messageCount}
                   </Badge>
-                )}
-                <span className="ml-1 opacity-70">
-                  <SessionProviderLogo provider={session.__provider} className="w-3 h-3" />
-                </span>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    {modeBadgeLabel}
+                  </Badge>
+                  <span className="opacity-70">
+                    <SessionProviderLogo provider={session.__provider} className="w-3 h-3" />
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -140,22 +149,28 @@ export default function SidebarSessionItem({
             <SessionProviderLogo provider={session.__provider} className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-normal truncate text-foreground/90">{sessionView.sessionName}</div>
-              <div className="flex items-center gap-1 mt-0.5">
+              <div className={metadataRowClassName}>
                 <Clock className="w-2.5 h-2.5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">
                   {formatTimeAgo(sessionView.sessionTime, currentTime, t)}
                 </span>
-                {sessionView.messageCount > 0 && (
+                <div className={`${rightMetaClassName} group-hover:opacity-0 transition-opacity`}>
                   <Badge
                     variant="secondary"
-                    className="text-xs px-1 py-0 ml-auto group-hover:opacity-0 transition-opacity"
+                    className="text-xs px-1 py-0 min-w-[1.5rem] justify-center"
                   >
                     {sessionView.messageCount}
                   </Badge>
-                )}
-                <span className="ml-1 opacity-70 group-hover:opacity-0 transition-opacity">
-                  <SessionProviderLogo provider={session.__provider} className="w-3 h-3" />
-                </span>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-1.5 py-0"
+                  >
+                    {modeBadgeLabel}
+                  </Badge>
+                  <span className="opacity-70">
+                    <SessionProviderLogo provider={session.__provider} className="w-3 h-3" />
+                  </span>
+                </div>
               </div>
             </div>
           </div>

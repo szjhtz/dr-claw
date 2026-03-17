@@ -259,7 +259,11 @@
     "deleteFile": "删除",
     "confirmDelete": "确定要删除 \"{{name}}\" 吗？",
     "deleteSuccess": "删除成功",
-    "uploadToFolder": "上传到此文件夹"
+    "uploadToFolder": "上传到此文件夹",
+    "askAboutFile": "询问这个文件",
+    "askAboutDirectory": "询问这个文件夹",
+    "askAboutFilePrompt": "请帮我解释一下文件 `{{path}}`。它的作用是什么，在这个项目里是怎么被使用的，以及我在修改它之前需要知道什么？",
+    "askAboutDirectoryPrompt": "请帮我解释一下目录 `{{path}}`。它的用途是什么，里面重要的文件或子模块有哪些，以及它在这个项目中的位置和作用是什么？"
   },
   "projectWizard": {
     "title": "创建新项目",

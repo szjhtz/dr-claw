@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import QuickSettingsPanel from '../../QuickSettingsPanel';
 import ChatTaskProgressPill from './subcomponents/ChatTaskProgressPill';
 import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
@@ -8,13 +8,55 @@ import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
 import SkillShortcutsPanel from './subcomponents/SkillShortcutsPanel';
 import type { ChatInterfaceProps } from '../types/types';
+import type { ProviderAvailability } from '../types/types';
 import { useChatProviderState } from '../hooks/useChatProviderState';
 import { useChatSessionState } from '../hooks/useChatSessionState';
 import { useChatRealtimeHandlers } from '../hooks/useChatRealtimeHandlers';
 import { useChatComposerState } from '../hooks/useChatComposerState';
 import type { Provider } from '../types/types';
+import { authenticatedFetch } from '../../../utils/api';
+import { readCliAvailability, writeCliAvailability } from '../../../utils/cliAvailability';
+import { Button } from '../../ui/button';
+import type { PendingAutoIntake } from '../../../types/app';
+import { CLAUDE_MODELS, CURSOR_MODELS, CODEX_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
+
+const DEFAULT_PROVIDER_AVAILABILITY: Record<Provider, ProviderAvailability> = {
+  claude: { cliAvailable: true, cliCommand: 'claude', installHint: null },
+  cursor: { cliAvailable: true, cliCommand: 'agent', installHint: null },
+  codex: { cliAvailable: true, cliCommand: 'codex', installHint: null },
+  gemini: { cliAvailable: true, cliCommand: 'gemini', installHint: null },
+};
 
 const INTAKE_GREETING = `Hello! I'm your Dr. Claw research assistant, here to help you set up your research pipeline.\n\nTo get started, could you tell me about your research field or topic?`;
+const WORKSPACE_QA_GREETING = `Ask about any file, module, or implementation detail in this workspace. I will stay focused on code and project structure unless you explicitly ask to start research planning.`;
+
+const getAutoIntakePrompt = (pendingAutoIntake?: PendingAutoIntake | null) => {
+  const prompt = pendingAutoIntake?.prompt?.trim();
+  return prompt || null;
+};
+
+const getAutoIntakeTriggerId = (pendingAutoIntake?: PendingAutoIntake | null) => {
+  const triggerId = pendingAutoIntake?.triggerId?.trim();
+  return triggerId || null;
+};
+
+const getAutoIntakeStorageKey = (projectName: string, triggerId?: string | null) =>
+  triggerId ? `intake_triggered_${projectName}_${triggerId}` : `intake_triggered_${projectName}`;
+
+const getImportedProjectAnalysisStorageKey = (projectName: string) => `imported_project_analysis_prompt_${projectName}`;
+
+const ANALYSIS_PROVIDERS: Array<{ id: Provider; label: string }> = [
+  { id: 'claude', label: 'Claude Code' },
+  { id: 'gemini', label: 'Gemini CLI' },
+  { id: 'codex', label: 'Codex' },
+];
+
+const getProviderModelConfig = (provider: Provider) => {
+  if (provider === 'claude') return CLAUDE_MODELS;
+  if (provider === 'codex') return CODEX_MODELS;
+  if (provider === 'gemini') return GEMINI_MODELS;
+  return CURSOR_MODELS;
+};
 
 type PendingViewSession = {
   sessionId: string | null;
@@ -46,6 +88,10 @@ function ChatInterface({
   onShowAllTasks,
   pendingAutoIntake,
   clearPendingAutoIntake,
+  importedProjectAnalysisPrompt,
+  clearImportedProjectAnalysisPrompt,
+  newSessionMode = 'research',
+  onNewSessionModeChange,
 }: ChatInterfaceProps) {
   const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();
   const { refreshTasks } = useTaskMaster();
@@ -176,6 +222,7 @@ function ChatInterface({
     isInputFocused,
     intakeGreeting,
     setIntakeGreeting,
+    submitProgrammaticInput,
   } = useChatComposerState({
     selectedProject,
     selectedSession,
@@ -205,6 +252,7 @@ function ChatInterface({
     setClaudeStatus,
     setIsUserScrolledUp,
     setPendingPermissionRequests,
+    newSessionMode,
   });
 
   useChatRealtimeHandlers({
@@ -232,10 +280,139 @@ function ChatInterface({
   });
 
   const autoIntakeTriggeredRef = useRef(false);
+  const lastAutoIntakeTriggerIdRef = useRef<string | null>(null);
+  const [importedProjectAnalysisProvider, setImportedProjectAnalysisProvider] = React.useState<Provider>('claude');
+  const shouldShowImportedProjectAnalysisPrompt = useMemo(() => {
+    if (!importedProjectAnalysisPrompt || !selectedProject || selectedSession || isLoading) {
+      return false;
+    }
+
+    const targetProjectName = importedProjectAnalysisPrompt.project?.name;
+    if (!targetProjectName || targetProjectName !== selectedProject.name) {
+      return false;
+    }
+
+    if (chatMessages.length > 0) {
+      return false;
+    }
+
+    if (typeof window === 'undefined') {
+      return true;
+    }
+
+    const dismissedKey = getImportedProjectAnalysisStorageKey(selectedProject.name);
+    return sessionStorage.getItem(dismissedKey) !== 'dismissed';
+  }, [chatMessages.length, importedProjectAnalysisPrompt, isLoading, selectedProject, selectedSession]);
+  const [providerAvailability, setProviderAvailability] = React.useState<Record<Provider, ProviderAvailability>>(() => {
+    const cached = readCliAvailability();
+
+    return {
+      claude: cached.claude ?? DEFAULT_PROVIDER_AVAILABILITY.claude,
+      cursor: cached.cursor ?? DEFAULT_PROVIDER_AVAILABILITY.cursor,
+      codex: cached.codex ?? DEFAULT_PROVIDER_AVAILABILITY.codex,
+      gemini: cached.gemini ?? DEFAULT_PROVIDER_AVAILABILITY.gemini,
+    };
+  });
+
+  const importedProjectAnalysisModel = useMemo(() => {
+    if (importedProjectAnalysisProvider === 'claude') return claudeModel;
+    if (importedProjectAnalysisProvider === 'codex') return codexModel;
+    if (importedProjectAnalysisProvider === 'gemini') return geminiModel;
+    return cursorModel;
+  }, [claudeModel, codexModel, cursorModel, geminiModel, importedProjectAnalysisProvider]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadProviderAvailability = async () => {
+      const checks: Array<{ provider: Provider; endpoint: string; fallbackCommand: string }> = [
+        { provider: 'claude', endpoint: '/api/cli/claude/status', fallbackCommand: 'claude' },
+        { provider: 'cursor', endpoint: '/api/cli/cursor/status', fallbackCommand: 'agent' },
+        { provider: 'codex', endpoint: '/api/cli/codex/status', fallbackCommand: 'codex' },
+        { provider: 'gemini', endpoint: '/api/cli/gemini/status', fallbackCommand: 'gemini' },
+      ];
+
+      const results = await Promise.all(checks.map(async ({ provider: nextProvider, endpoint, fallbackCommand }) => {
+        try {
+          const response = await authenticatedFetch(endpoint);
+          const data = await response.json();
+          return [nextProvider, {
+            cliAvailable: data.cliAvailable !== false,
+            cliCommand: data.cliCommand || fallbackCommand,
+            installHint: data.installHint || null,
+          }] as const;
+        } catch {
+          return [nextProvider, {
+            cliAvailable: true,
+            cliCommand: fallbackCommand,
+            installHint: null,
+          }] as const;
+        }
+      }));
+
+      if (cancelled) {
+        return;
+      }
+
+      const nextAvailability = Object.fromEntries(results) as Record<Provider, ProviderAvailability>;
+      for (const [nextProvider, availability] of Object.entries(nextAvailability) as Array<[Provider, ProviderAvailability]>) {
+        writeCliAvailability(nextProvider, {
+          cliAvailable: availability.cliAvailable,
+          cliCommand: availability.cliCommand ?? null,
+          installHint: availability.installHint ?? null,
+        });
+      }
+
+      setProviderAvailability(nextAvailability);
+    };
+
+    void loadProviderAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (providerAvailability[provider]?.cliAvailable === false) {
+      const fallbackProvider = (['claude', 'cursor', 'codex', 'gemini'] as const).find(
+        (candidate) => providerAvailability[candidate]?.cliAvailable !== false,
+      );
+
+      if (fallbackProvider && fallbackProvider !== provider) {
+        setProvider(fallbackProvider);
+        localStorage.setItem('selected-provider', fallbackProvider);
+      }
+    }
+  }, [provider, providerAvailability, setProvider]);
+
+  useEffect(() => {
+    if (providerAvailability[importedProjectAnalysisProvider]?.cliAvailable !== false) {
+      return;
+    }
+
+    const fallbackProvider = ANALYSIS_PROVIDERS.find(
+      ({ id }) => providerAvailability[id]?.cliAvailable !== false,
+    )?.id;
+
+    if (fallbackProvider && fallbackProvider !== importedProjectAnalysisProvider) {
+      setImportedProjectAnalysisProvider(fallbackProvider);
+    }
+  }, [importedProjectAnalysisProvider, providerAvailability]);
+
+  useEffect(() => {
+    const triggerId = getAutoIntakeTriggerId(pendingAutoIntake);
+    if (triggerId && lastAutoIntakeTriggerIdRef.current !== triggerId) {
+      autoIntakeTriggeredRef.current = false;
+      lastAutoIntakeTriggerIdRef.current = triggerId;
+    }
+
+    if (!pendingAutoIntake || newSessionMode !== 'research') {
+      autoIntakeTriggeredRef.current = false;
+      return;
+    }
+
     if (
-      !pendingAutoIntake ||
       autoIntakeTriggeredRef.current ||
       !selectedProject ||
       selectedSession ||
@@ -243,7 +420,7 @@ function ChatInterface({
       chatMessages.length > 0
     ) return;
 
-    const intakeKey = `intake_triggered_${selectedProject.name}`;
+    const intakeKey = getAutoIntakeStorageKey(selectedProject.name, triggerId);
     if (sessionStorage.getItem(intakeKey)) {
       clearPendingAutoIntake?.();
       return;
@@ -251,10 +428,35 @@ function ChatInterface({
 
     autoIntakeTriggeredRef.current = true;
     sessionStorage.setItem(intakeKey, 'true');
+
+    const autoIntakePrompt = getAutoIntakePrompt(pendingAutoIntake);
+
+    if (autoIntakePrompt) {
+      clearPendingAutoIntake?.();
+      submitProgrammaticInput(autoIntakePrompt);
+      return;
+    }
+
     clearPendingAutoIntake?.();
 
     setIntakeGreeting(INTAKE_GREETING);
-  }, [pendingAutoIntake, selectedProject, selectedSession, isLoading, chatMessages.length, clearPendingAutoIntake, setIntakeGreeting]);
+  }, [
+    pendingAutoIntake,
+    selectedProject,
+    selectedSession,
+    isLoading,
+    chatMessages.length,
+    clearPendingAutoIntake,
+    setIntakeGreeting,
+    submitProgrammaticInput,
+    newSessionMode,
+  ]);
+
+  useEffect(() => {
+    if (selectedSession?.mode) {
+      onNewSessionModeChange?.(selectedSession.mode);
+    }
+  }, [onNewSessionModeChange, selectedSession?.id, selectedSession?.mode]);
 
   useEffect(() => {
     if (!isLoading || !canAbortSession) {
@@ -306,6 +508,61 @@ function ChatInterface({
     }
   }, [latestMessage, refreshTasks]);
 
+  const handleImportedProjectAnalysisDismiss = useCallback(() => {
+    if (typeof window !== 'undefined' && selectedProject) {
+      sessionStorage.setItem(getImportedProjectAnalysisStorageKey(selectedProject.name), 'dismissed');
+    }
+    clearImportedProjectAnalysisPrompt?.();
+  }, [clearImportedProjectAnalysisPrompt, selectedProject]);
+
+  const handleImportedProjectAnalysisModelChange = useCallback((nextModel: string) => {
+    if (importedProjectAnalysisProvider === 'claude') {
+      setClaudeModel(nextModel);
+      localStorage.setItem('claude-model', nextModel);
+      return;
+    }
+
+    if (importedProjectAnalysisProvider === 'codex') {
+      setCodexModel(nextModel);
+      localStorage.setItem('codex-model', nextModel);
+      return;
+    }
+
+    if (importedProjectAnalysisProvider === 'gemini') {
+      setGeminiModel(nextModel);
+      localStorage.setItem('gemini-model', nextModel);
+      return;
+    }
+
+    setCursorModel(nextModel);
+    localStorage.setItem('cursor-model', nextModel);
+  }, [importedProjectAnalysisProvider, setClaudeModel, setCodexModel, setCursorModel, setGeminiModel]);
+
+  const handleImportedProjectAnalysisConfirm = useCallback(() => {
+    const prompt = importedProjectAnalysisPrompt?.prompt?.trim();
+    if (!prompt || !selectedProject) {
+      clearImportedProjectAnalysisPrompt?.();
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem(getImportedProjectAnalysisStorageKey(selectedProject.name));
+    }
+
+    setProvider(importedProjectAnalysisProvider);
+    localStorage.setItem('selected-provider', importedProjectAnalysisProvider);
+
+    clearImportedProjectAnalysisPrompt?.();
+    submitProgrammaticInput(prompt);
+  }, [
+    clearImportedProjectAnalysisPrompt,
+    importedProjectAnalysisPrompt?.prompt,
+    importedProjectAnalysisProvider,
+    selectedProject,
+    setProvider,
+    submitProgrammaticInput,
+  ]);
+
   if (!selectedProject) {
     const selectedProviderLabel =
       provider === 'cursor'
@@ -341,6 +598,72 @@ function ChatInterface({
   return (
     <>
       <div className="h-full flex flex-col">
+        {shouldShowImportedProjectAnalysisPrompt && (
+          <div className="mx-auto mt-4 w-full max-w-3xl px-3 sm:px-4">
+            <div className="rounded-xl border border-border bg-card/95 shadow-sm px-4 py-4 sm:px-5">
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Analyze Imported Project?</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Start a new session to scan this workspace, analyze the project structure and implementation, and summarize next steps.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">Provider</span>
+                      <select
+                        value={importedProjectAnalysisProvider}
+                        onChange={(event) => setImportedProjectAnalysisProvider(event.target.value as Provider)}
+                        className="min-w-[180px] rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        {ANALYSIS_PROVIDERS.map(({ id, label }) => {
+                          const unavailable = providerAvailability[id]?.cliAvailable === false;
+                          return (
+                            <option key={id} value={id} disabled={unavailable}>
+                              {unavailable ? `${label} (Not installed)` : label}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">Model</span>
+                      <select
+                        value={importedProjectAnalysisModel}
+                        onChange={(event) => handleImportedProjectAnalysisModelChange(event.target.value)}
+                        className="min-w-[220px] rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        {getProviderModelConfig(importedProjectAnalysisProvider).OPTIONS.map(({ value, label }: { value: string; label: string }) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="flex gap-2 sm:flex-shrink-0">
+                    <Button variant="outline" onClick={handleImportedProjectAnalysisDismiss}>
+                      Not Now
+                    </Button>
+                    <Button onClick={handleImportedProjectAnalysisConfirm}>
+                      Analyze Project
+                    </Button>
+                  </div>
+                </div>
+
+                {providerAvailability[importedProjectAnalysisProvider]?.cliAvailable === false && (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {providerAvailability[importedProjectAnalysisProvider]?.installHint || 'Selected provider is not installed.'}
+                  </p>
+                )}
+
+              </div>
+            </div>
+          </div>
+        )}
+
         <ChatMessagesPane
           scrollContainerRef={scrollContainerRef}
           onWheel={handleScroll}
@@ -383,6 +706,9 @@ function ChatInterface({
           showThinking={showThinking}
           selectedProject={selectedProject}
           isLoading={isLoading}
+          providerAvailability={providerAvailability}
+          newSessionMode={newSessionMode}
+          onNewSessionModeChange={onNewSessionModeChange}
         />
 
         <div className="px-2 sm:px-4 max-w-5xl mx-auto w-full">

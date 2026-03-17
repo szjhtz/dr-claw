@@ -10,7 +10,7 @@ import {
   Hash, Braces, Terminal, Database, Globe, Palette, Music2, Video, Archive,
   Lock, Shield, Settings, Image, BookOpen, Cpu, Box, Gem, Coffee,
   Flame, Hexagon, FileCode2, Code2, Cog, FileWarning, Binary, SquareFunction,
-  Scroll, FlaskConical, NotebookPen, FileCheck, Workflow, Blocks
+  Scroll, FlaskConical, NotebookPen, FileCheck, Workflow, Blocks, MessageSquarePlus
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ImageViewer from './ImageViewer';
@@ -259,7 +259,7 @@ function getFileIconData(filename) {
 
 // ─── Component ───────────────────────────────────────────────────────
 
-function FileTree({ selectedProject, onFileOpen }) {
+function FileTree({ selectedProject, onFileOpen, onStartWorkspaceQa }) {
   const { t } = useTranslation();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -324,6 +324,66 @@ function FileTree({ selectedProject, onFileOpen }) {
       setTimeout(() => setCopiedPath(null), 2000);
     });
   };
+
+  const buildWorkspaceQaPrompt = useCallback((item) => {
+    if (item.type === 'directory') {
+      return t('fileTree.askAboutDirectoryPrompt', {
+        name: item.name,
+        path: item.path,
+      });
+    }
+
+    return t('fileTree.askAboutFilePrompt', {
+      name: item.name,
+      path: item.path,
+    });
+  }, [t]);
+
+  const handleAskAboutItem = useCallback((e, item) => {
+    e.stopPropagation();
+    if (!selectedProject || !onStartWorkspaceQa) {
+      return;
+    }
+
+    onStartWorkspaceQa(selectedProject, buildWorkspaceQaPrompt(item));
+  }, [buildWorkspaceQaPrompt, onStartWorkspaceQa, selectedProject]);
+
+  const renderRowActions = (item, className = 'flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity') => (
+    <span className={className}>
+      {item.type === 'directory' && (
+        <button
+          className="p-0.5 rounded hover:bg-accent"
+          title={t('fileTree.uploadToFolder')}
+          onClick={(e) => { e.stopPropagation(); uploadTargetDirRef.current = item.path; fileInputRef.current?.click(); }}
+        >
+          <UploadCloud className="w-3.5 h-3.5 text-muted-foreground" />
+        </button>
+      )}
+      <button
+        className="p-0.5 rounded hover:bg-accent"
+        title={t(item.type === 'directory' ? 'fileTree.askAboutDirectory' : 'fileTree.askAboutFile')}
+        onClick={(e) => handleAskAboutItem(e, item)}
+      >
+        <MessageSquarePlus className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+      </button>
+      <button
+        className="p-0.5 rounded hover:bg-accent"
+        title={t('fileTree.copyPath')}
+        onClick={(e) => handleCopyPath(e, item)}
+      >
+        {copiedPath === item.path
+          ? <Check className="w-3.5 h-3.5 text-green-500" />
+          : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
+      </button>
+      <button
+        className="p-0.5 rounded hover:bg-destructive/20"
+        title={t('fileTree.deleteFile')}
+        onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
+      >
+        <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+      </button>
+    </span>
+  );
 
   const handleDelete = useCallback(async (item) => {
     if (!selectedProject) return;
@@ -557,33 +617,7 @@ function FileTree({ selectedProject, onFileOpen }) {
             )}>
               {item.name}
             </span>
-            <span className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-              {isDir && (
-                <button
-                  className="p-0.5 rounded hover:bg-accent"
-                  title={t('fileTree.uploadToFolder')}
-                  onClick={(e) => { e.stopPropagation(); uploadTargetDirRef.current = item.path; fileInputRef.current?.click(); }}
-                >
-                  <UploadCloud className="w-3.5 h-3.5 text-muted-foreground" />
-                </button>
-              )}
-              <button
-                className="p-0.5 rounded hover:bg-accent"
-                title={t('fileTree.copyPath')}
-                onClick={(e) => handleCopyPath(e, item)}
-              >
-                {copiedPath === item.path
-                  ? <Check className="w-3.5 h-3.5 text-green-500" />
-                  : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
-              </button>
-              <button
-                className="p-0.5 rounded hover:bg-destructive/20"
-                title={t('fileTree.deleteFile')}
-                onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
-              >
-                <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-              </button>
-            </span>
+            {renderRowActions(item)}
           </div>
 
           {isDir && isOpen && item.children && item.children.length > 0 && (
@@ -633,33 +667,7 @@ function FileTree({ selectedProject, onFileOpen }) {
               )}>
                 {item.name}
               </span>
-              <span className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                {isDir && (
-                  <button
-                    className="p-0.5 rounded hover:bg-accent"
-                    title={t('fileTree.uploadToFolder')}
-                    onClick={(e) => { e.stopPropagation(); uploadTargetDirRef.current = item.path; fileInputRef.current?.click(); }}
-                  >
-                    <UploadCloud className="w-3.5 h-3.5 text-muted-foreground" />
-                  </button>
-                )}
-                <button
-                  className="p-0.5 rounded hover:bg-accent"
-                  title={t('fileTree.copyPath')}
-                  onClick={(e) => handleCopyPath(e, item)}
-                >
-                  {copiedPath === item.path
-                    ? <Check className="w-3.5 h-3.5 text-green-500" />
-                    : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
-                </button>
-                <button
-                  className="p-0.5 rounded hover:bg-destructive/20"
-                  title={t('fileTree.deleteFile')}
-                  onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-                </button>
-              </span>
+              {renderRowActions(item)}
             </div>
             <div className="col-span-2 text-xs text-muted-foreground tabular-nums">
               {item.type === 'file' ? formatFileSize(item.size) : ''}
@@ -727,33 +735,7 @@ function FileTree({ selectedProject, onFileOpen }) {
                   <span className="font-mono">{item.permissionsRwx}</span>
                 </>
               )}
-              <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                {isDir && (
-                  <button
-                    className="p-0.5 rounded hover:bg-accent"
-                    title={t('fileTree.uploadToFolder')}
-                    onClick={(e) => { e.stopPropagation(); uploadTargetDirRef.current = item.path; fileInputRef.current?.click(); }}
-                  >
-                    <UploadCloud className="w-3.5 h-3.5 text-muted-foreground" />
-                  </button>
-                )}
-                <button
-                  className="p-0.5 rounded hover:bg-accent"
-                  title={t('fileTree.copyPath')}
-                  onClick={(e) => handleCopyPath(e, item)}
-                >
-                  {copiedPath === item.path
-                    ? <Check className="w-3.5 h-3.5 text-green-500" />
-                    : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
-                </button>
-                <button
-                  className="p-0.5 rounded hover:bg-destructive/20"
-                  title={t('fileTree.deleteFile')}
-                  onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-                </button>
-              </span>
+              {renderRowActions(item, 'flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity')}
             </div>
           </div>
 

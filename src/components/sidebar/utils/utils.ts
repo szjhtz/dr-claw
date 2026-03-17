@@ -67,6 +67,21 @@ export const getSessionName = (session: SessionWithProvider, t: TFunction): stri
   return session.summary || t('projects.newSession');
 };
 
+export const getSessionMode = (session: SessionWithProvider) => {
+  if (session.mode === 'workspace_qa') {
+    return 'workspace_qa';
+  }
+
+  if (typeof window !== 'undefined' && session.__projectName) {
+    const storedMode = window.localStorage.getItem(`session_mode_${session.__projectName}_${session.id}`);
+    if (storedMode === 'workspace_qa') {
+      return 'workspace_qa';
+    }
+  }
+
+  return 'research';
+};
+
 export const getSessionTime = (session: SessionWithProvider): string => {
   if (session.__provider === 'cursor') {
     return String(session.createdAt || '');
@@ -95,6 +110,7 @@ export const createSessionViewModel = (
     sessionName: getSessionName(session, t),
     sessionTime: getSessionTime(session),
     messageCount: Number(session.messageCount || 0),
+    mode: getSessionMode(session),
   };
 };
 
@@ -105,21 +121,24 @@ export const getAllSessions = (
   const claudeSessions = [
     ...(project.sessions || []),
     ...(additionalSessions[project.name] || []),
-  ].map((session) => ({ ...session, __provider: 'claude' as const }));
+  ].map((session) => ({ ...session, __provider: 'claude' as const, __projectName: project.name }));
 
   const cursorSessions = (project.cursorSessions || []).map((session) => ({
     ...session,
     __provider: 'cursor' as const,
+    __projectName: project.name,
   }));
 
   const codexSessions = (project.codexSessions || []).map((session) => ({
     ...session,
     __provider: 'codex' as const,
+    __projectName: project.name,
   }));
 
   const geminiSessions = (project.geminiSessions || []).map((session) => ({
     ...session,
     __provider: 'gemini' as const,
+    __projectName: project.name,
   }));
 
   return [...claudeSessions, ...cursorSessions, ...codexSessions, ...geminiSessions].sort(

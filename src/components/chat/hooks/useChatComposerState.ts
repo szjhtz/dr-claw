@@ -17,6 +17,7 @@ import { thinkingModes } from '../constants/thinkingModes';
 
 import { grantClaudeToolPermission } from '../utils/chatPermissions';
 import { safeLocalStorage } from '../utils/chatStorage';
+import { consumeWorkspaceQaDraft, WORKSPACE_QA_DRAFT_EVENT } from '../../../utils/workspaceQa';
 import type {
   ChatMessage,
   PendingPermissionRequest,
@@ -26,6 +27,7 @@ import { useFileMentions } from './useFileMentions';
 import { type SlashCommand, useSlashCommands } from './useSlashCommands';
 import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
 import { escapeRegExp } from '../utils/chatFormatting';
+import type { SessionMode } from '../../../types/app';
 
 type PendingViewSession = {
   sessionId: string | null;
@@ -61,6 +63,7 @@ interface UseChatComposerStateArgs {
   setClaudeStatus: (status: { text: string; tokens: number; can_interrupt: boolean } | null) => void;
   setIsUserScrolledUp: (isScrolledUp: boolean) => void;
   setPendingPermissionRequests: Dispatch<SetStateAction<PendingPermissionRequest[]>>;
+  newSessionMode?: SessionMode;
 }
 
 interface MentionableFile {
@@ -80,6 +83,9 @@ interface CommandExecutionResult {
 const createFakeSubmitEvent = () => {
   return { preventDefault: () => undefined } as unknown as FormEvent<HTMLFormElement>;
 };
+
+const PROGRAMMATIC_SUBMIT_MAX_RETRIES = 12;
+const PROGRAMMATIC_SUBMIT_RETRY_DELAY_MS = 50;
 
 const isTemporarySessionId = (sessionId: string | null | undefined) =>
   Boolean(sessionId && sessionId.startsWith('new-session-'));
@@ -113,6 +119,7 @@ export function useChatComposerState({
   setClaudeStatus,
   setIsUserScrolledUp,
   setPendingPermissionRequests,
+  newSessionMode = 'research',
 }: UseChatComposerStateArgs) {
   const [input, setInput] = useState(() => {
     if (typeof window !== 'undefined' && selectedProject) {
@@ -283,6 +290,32 @@ export function useChatComposerState({
       }
     }, 0);
   }, [setChatMessages]);
+
+  const submitProgrammaticInput = useCallback((content: string) => {
+    const nextContent = content || '';
+    setInput(nextContent);
+    inputValueRef.current = nextContent;
+
+    const attemptSubmit = (attempt = 0) => {
+      if (handleSubmitRef.current) {
+        handleSubmitRef.current(createFakeSubmitEvent());
+        return;
+      }
+
+      if (attempt >= PROGRAMMATIC_SUBMIT_MAX_RETRIES) {
+        console.warn('[Chat] Programmatic submit skipped because handleSubmit was not ready');
+        return;
+      }
+
+      setTimeout(() => {
+        attemptSubmit(attempt + 1);
+      }, PROGRAMMATIC_SUBMIT_RETRY_DELAY_MS);
+    };
+
+    setTimeout(() => {
+      attemptSubmit();
+    }, 0);
+  }, []);
 
   const executeCommand = useCallback(
     async (command: SlashCommand, rawInput?: string) => {
@@ -585,6 +618,7 @@ export function useChatComposerState({
       // Determine the session ID to use.
       // If we're on the home route ('/') and currentSessionId is null, we are starting a new session.
       const isExplicitNewSession = !currentSessionId && window.location.pathname === '/';
+      const isNewSession = isExplicitNewSession || (!currentSessionId && !selectedSession?.id);
       
       const effectiveSessionId = isExplicitNewSession 
         ? null 
@@ -635,6 +669,13 @@ export function useChatComposerState({
       console.log('[DEBUG] useChatComposerState - provider:', provider);
       console.log('[DEBUG] useChatComposerState - effectiveSessionId:', effectiveSessionId);
 
+      if (isNewSession) {
+        const sessionModeContext = newSessionMode === 'workspace_qa'
+          ? '[Context: session-mode=workspace_qa]\n[Context: Treat this as a lightweight workspace Q&A session. Focus on answering questions about files, code, and project structure. Do not start the research intake or pipeline workflow unless the user explicitly asks for it.]\n\n'
+          : '[Context: session-mode=research]\n[Context: This is a research workflow session. Follow the normal project research instructions and pipeline behavior.]\n\n';
+        messageContent = `${sessionModeContext}${messageContent}`;
+      }
+
       if (provider === 'cursor') {
         console.log('[DEBUG] Sending cursor-command');
         sendMessage({
@@ -650,6 +691,7 @@ export function useChatComposerState({
             skipPermissions: toolsSettings?.skipPermissions || false,
             toolsSettings,
             telemetryEnabled,
+            sessionMode: isNewSession ? newSessionMode : selectedSession?.mode,
           },
         });
       } else if (provider === 'gemini') {
@@ -668,6 +710,7 @@ export function useChatComposerState({
             images: uploadedImages,
             toolsSettings,
             telemetryEnabled,
+            sessionMode: isNewSession ? newSessionMode : selectedSession?.mode,
           },
         });
       } else if (provider === 'codex') {
@@ -684,6 +727,7 @@ export function useChatComposerState({
             model: codexModel,
             permissionMode: permissionMode === 'plan' ? 'default' : permissionMode,
             telemetryEnabled,
+            sessionMode: isNewSession ? newSessionMode : selectedSession?.mode,
           },
         });
       } else {
@@ -701,6 +745,7 @@ export function useChatComposerState({
             model: claudeModel,
             images: uploadedImages,
             telemetryEnabled,
+            sessionMode: isNewSession ? newSessionMode : selectedSession?.mode,
           },
         });
       }
@@ -768,6 +813,51 @@ export function useChatComposerState({
       return next;
     });
   }, [selectedProject?.name]);
+
+  useEffect(() => {
+    if (!selectedProject) {
+      return;
+    }
+
+    const applyQueuedDraft = () => {
+      const draft = consumeWorkspaceQaDraft(selectedProject.name);
+      if (!draft) {
+        return;
+      }
+
+      setInput(draft);
+      inputValueRef.current = draft;
+
+      setTimeout(() => {
+        if (!textareaRef.current) {
+          return;
+        }
+
+        textareaRef.current.focus();
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        const cursor = draft.length;
+        textareaRef.current.setSelectionRange(cursor, cursor);
+        const lineHeight = parseInt(window.getComputedStyle(textareaRef.current).lineHeight);
+        setIsTextareaExpanded(textareaRef.current.scrollHeight > lineHeight * 2);
+      }, 0);
+    };
+
+    applyQueuedDraft();
+
+    const handleQueuedDraft = (event: Event) => {
+      const customEvent = event as CustomEvent<{ projectName?: string }>;
+      if (customEvent.detail?.projectName !== selectedProject.name) {
+        return;
+      }
+      applyQueuedDraft();
+    };
+
+    window.addEventListener(WORKSPACE_QA_DRAFT_EVENT, handleQueuedDraft);
+    return () => {
+      window.removeEventListener(WORKSPACE_QA_DRAFT_EVENT, handleQueuedDraft);
+    };
+  }, [selectedProject?.name, setInput]);
 
   useEffect(() => {
     if (!selectedProject) {
@@ -1086,5 +1176,6 @@ export function useChatComposerState({
     isInputFocused,
     intakeGreeting,
     setIntakeGreeting,
+    submitProgrammaticInput,
   };
 }

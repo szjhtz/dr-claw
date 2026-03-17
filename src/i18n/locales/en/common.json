@@ -259,7 +259,11 @@
     "deleteFile": "Delete",
     "confirmDelete": "Are you sure you want to delete \"{{name}}\"?",
     "deleteSuccess": "Deleted successfully",
-    "uploadToFolder": "Upload to this folder"
+    "uploadToFolder": "Upload to this folder",
+    "askAboutFile": "Ask about this file",
+    "askAboutDirectory": "Ask about this folder",
+    "askAboutFilePrompt": "Please explain the file `{{path}}`. What does it do, how is it used in this project, and what should I know before editing it?",
+    "askAboutDirectoryPrompt": "Please explain the folder `{{path}}`. What is its purpose, what are the important files or submodules inside it, and how does it fit into this project?"
   },
   "projectWizard": {
     "title": "Create New Project",

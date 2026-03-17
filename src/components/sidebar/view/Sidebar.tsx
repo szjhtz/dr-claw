@@ -12,6 +12,7 @@ import SidebarContent from './subcomponents/SidebarContent';
 import SidebarModals from './subcomponents/SidebarModals';
 import ProjectCreationWizard from '../../ProjectCreationWizard';
 import type { Project } from '../../../types/app';
+import type { ProjectCreationOptions } from '../../../types/app';
 import type { SidebarProjectListProps } from './subcomponents/SidebarProjectList';
 import type { MCPServerStatus, SidebarProps } from '../types/types';
 
@@ -41,6 +42,8 @@ function Sidebar({
   onOpenDashboard,
   onOpenSkills,
   onOpenNews,
+  onImportedProjectCreated,
+  newSessionMode,
 }: SidebarProps) {
   const { t } = useTranslation(['sidebar', 'common']);
   const { isPWA } = useDeviceSettings({ trackMobile: false });
@@ -163,6 +166,7 @@ function Sidebar({
       void loadMoreSessions(project);
     },
     onNewSession,
+    newSessionMode,
     onEditingSessionNameChange: setEditingSessionName,
     onStartEditingSession: (sessionId, initialName) => {
       setEditingSession(sessionId);
@@ -204,11 +208,15 @@ function Sidebar({
       {showWizard && (
         <ProjectCreationWizard
           onClose={() => setShowWizard(false)}
-          onProjectCreated={(project: Project) => {
+          onProjectCreated={(project: Project, options?: ProjectCreationOptions) => {
             setShowWizard(false);
             window.refreshProjects?.();
+            if (options?.importedProjectAnalysisPrompt) {
+              onImportedProjectCreated?.(project, options);
+              return;
+            }
             if (window.handleProjectCreatedWithIntake) {
-              window.handleProjectCreatedWithIntake(project);
+              window.handleProjectCreatedWithIntake(project, options);
             } else {
               handleProjectSelect(project);
             }

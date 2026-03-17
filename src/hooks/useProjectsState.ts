@@ -1,20 +1,47 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
 import { api } from '../utils/api';
+import { queueWorkspaceQaDraft } from '../utils/workspaceQa';
 import type {
   AppSocketMessage,
   AppTab,
+  ImportedProjectAnalysisPrompt,
   LoadingProgress,
+  ProjectCreationOptions,
   Project,
   ProjectSession,
   ProjectsUpdatedMessage,
+  PendingAutoIntake,
+  SessionMode,
 } from '../types/app';
 
 declare global {
   interface Window {
-    handleProjectCreatedWithIntake?: (project: Project) => void;
+    handleProjectCreatedWithIntake?: (project: Project, options?: ProjectCreationOptions) => void;
   }
 }
+
+const SESSION_MODE_STORAGE_KEY = 'dr-claw-new-session-mode';
+
+const isSessionMode = (value: string | null | undefined): value is SessionMode =>
+  value === 'research' || value === 'workspace_qa';
+
+const readStoredNewSessionMode = (): SessionMode => {
+  if (typeof window === 'undefined') {
+    return 'research';
+  }
+
+  const stored = window.sessionStorage.getItem(SESSION_MODE_STORAGE_KEY);
+  return isSessionMode(stored) ? stored : 'research';
+};
+
+const persistNewSessionMode = (mode: SessionMode) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.sessionStorage.setItem(SESSION_MODE_STORAGE_KEY, mode);
+};
 
 type UseProjectsStateArgs = {
   sessionId?: string;
@@ -126,7 +153,9 @@ export function useProjectsState({
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState('agents');
   const [externalMessageUpdate, setExternalMessageUpdate] = useState(0);
-  const [pendingAutoIntake, setPendingAutoIntake] = useState(false);
+  const [pendingAutoIntake, setPendingAutoIntake] = useState<PendingAutoIntake | null>(null);
+  const [importedProjectAnalysisPrompt, setImportedProjectAnalysisPrompt] = useState<ImportedProjectAnalysisPrompt | null>(null);
+  const [newSessionMode, setNewSessionMode] = useState<SessionMode>(() => readStoredNewSessionMode());
 
   const loadingProgressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const projectsUpdateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -166,6 +195,60 @@ export function useProjectsState({
   useEffect(() => {
     if (!latestMessage) {
       return;
+    }
+
+    if (latestMessage.type === 'session-created' && latestMessage.sessionId && latestMessage.provider) {
+      const rawMode = latestMessage.mode;
+      const modeValue = typeof rawMode === 'string' ? rawMode : null;
+      const sessionMode: SessionMode = isSessionMode(modeValue) ? modeValue : 'research';
+
+      setProjects((prevProjects) => prevProjects.map((project) => {
+        const updateSessionList = (
+          sessions: ProjectSession[] | undefined,
+          provider: ProjectSession['__provider'],
+        ): ProjectSession[] | undefined => {
+          if (!Array.isArray(sessions)) {
+            return sessions;
+          }
+
+          let changed = false;
+          const nextSessions = sessions.map((session) => {
+            if (session.id !== latestMessage.sessionId) {
+              return session;
+            }
+
+            changed = true;
+            return {
+              ...session,
+              mode: sessionMode,
+              __provider: session.__provider || provider,
+            };
+          });
+
+          return changed ? nextSessions : sessions;
+        };
+
+        const nextProject = {
+          ...project,
+          sessions: updateSessionList(project.sessions, 'claude'),
+          cursorSessions: updateSessionList(project.cursorSessions, 'cursor'),
+          codexSessions: updateSessionList(project.codexSessions, 'codex'),
+          geminiSessions: updateSessionList(project.geminiSessions, 'gemini'),
+        };
+
+        return nextProject;
+      }));
+
+      setSelectedSession((previous) => {
+        if (!previous || previous.id !== latestMessage.sessionId) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          mode: sessionMode,
+        };
+      });
     }
 
     if (latestMessage.type === 'loading_progress') {
@@ -386,6 +469,11 @@ export function useProjectsState({
     (session: ProjectSession) => {
       setSelectedSession(session);
 
+      if (session.mode) {
+        persistNewSessionMode(session.mode);
+        setNewSessionMode(session.mode);
+      }
+
       if (activeTab !== 'git' && activeTab !== 'preview') {
         setActiveTab('chat');
       }
@@ -410,10 +498,29 @@ export function useProjectsState({
   );
 
   const handleNewSession = useCallback(
-    (project: Project) => {
+    (project: Project, mode: SessionMode = 'research') => {
       setSelectedProject(project);
       setSelectedSession(null);
       setActiveTab('chat');
+      persistNewSessionMode(mode);
+      setNewSessionMode(mode);
+      navigate('/');
+
+      if (isMobile) {
+        setSidebarOpen(false);
+      }
+    },
+    [isMobile, navigate],
+  );
+
+  const handleStartWorkspaceQa = useCallback(
+    (project: Project, prompt: string) => {
+      setSelectedProject(project);
+      setSelectedSession(null);
+      setActiveTab('chat');
+      persistNewSessionMode('workspace_qa');
+      setNewSessionMode('workspace_qa');
+      queueWorkspaceQaDraft(project.name, prompt);
       navigate('/');
 
       if (isMobile) {
@@ -424,18 +531,20 @@ export function useProjectsState({
   );
 
   const handleProjectCreatedWithIntake = useCallback(
-    (project: Project) => {
+    (project: Project, options?: ProjectCreationOptions) => {
       setSelectedProject(project);
       setSelectedSession(null);
       setActiveTab('chat');
-      setPendingAutoIntake(true);
+      setPendingAutoIntake(options?.autoIntake ?? null);
+      setImportedProjectAnalysisPrompt(options?.importedProjectAnalysisPrompt ?? null);
       navigate('/');
       if (isMobile) setSidebarOpen(false);
     },
     [isMobile, navigate],
   );
 
-  const clearPendingAutoIntake = useCallback(() => setPendingAutoIntake(false), []);
+  const clearPendingAutoIntake = useCallback(() => setPendingAutoIntake(null), []);
+  const clearImportedProjectAnalysisPrompt = useCallback(() => setImportedProjectAnalysisPrompt(null), []);
 
   const handleOpenDashboard = useCallback(() => {
     setSelectedProject(null);
@@ -572,9 +681,14 @@ export function useProjectsState({
       onOpenDashboard: handleOpenDashboard,
       onOpenSkills: handleOpenSkills,
       onOpenNews: handleOpenNews,
+      onImportedProjectCreated: handleProjectCreatedWithIntake,
+      importedProjectAnalysisPrompt,
+      onDismissImportedProjectAnalysisPrompt: clearImportedProjectAnalysisPrompt,
+      newSessionMode,
     }),
     [
       handleNewSession,
+      handleProjectCreatedWithIntake,
       handleProjectDelete,
       handleProjectSelect,
       handleSessionDelete,
@@ -588,10 +702,13 @@ export function useProjectsState({
       handleOpenDashboard,
       handleOpenSkills,
       handleOpenNews,
+      importedProjectAnalysisPrompt,
+      newSessionMode,
       settingsInitialTab,
       selectedProject,
       selectedSession,
       showSettings,
+      clearImportedProjectAnalysisPrompt,
     ],
   );
 
@@ -607,6 +724,9 @@ export function useProjectsState({
     showSettings,
     settingsInitialTab,
     externalMessageUpdate,
+    importedProjectAnalysisPrompt,
+    newSessionMode,
+    setNewSessionMode,
     setActiveTab,
     setSidebarOpen,
     setIsInputFocused,
@@ -620,11 +740,13 @@ export function useProjectsState({
     handleOpenSkills,
     handleOpenNews,
     handleNewSession,
+    handleStartWorkspaceQa,
     handleSessionDelete,
     handleProjectDelete,
     handleSidebarRefresh,
     pendingAutoIntake,
     handleProjectCreatedWithIntake,
     clearPendingAutoIntake,
+    clearImportedProjectAnalysisPrompt,
   };
 }

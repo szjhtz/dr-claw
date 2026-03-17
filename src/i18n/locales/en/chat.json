@@ -160,6 +160,9 @@
     "title": "Choose Your AI Assistant",
     "description": "Select a provider to start a new conversation",
     "selectModel": "Select Model",
+    "notInstalled": "Not installed",
+    "installRequired": "{{provider}} CLI is not installed",
+    "unavailableHint": "Some CLI backends are unavailable on this machine. Install the missing tools in Settings before using them.",
     "providerInfo": {
       "anthropic": "by Anthropic",
       "openai": "by OpenAI",
@@ -175,6 +178,17 @@
     "cliBackendHint": "Choose a CLI backend (Claude Code / Cursor / Codex)"
   },
   "session": {
+    "mode": {
+      "title": "Choose Session Type",
+      "subtitle": "Decide whether this session should drive research planning or stay focused on workspace questions.",
+      "research": "Research",
+      "workspaceQa": "Files Q&A",
+      "researchTitle": "Research Session",
+      "researchDescription": "Use the project research workflow, onboarding prompts, and pipeline guidance.",
+      "workspaceQaTitle": "Workspace Q&A",
+      "workspaceQaDescription": "Ask about files, modules, and implementation details without triggering the research workflow.",
+      "workspaceQaHint": "This session stays focused on repository questions unless you explicitly ask to start research planning."
+    },
     "continue": {
       "title": "Continue your conversation",
       "description": "Ask questions about your code, request changes, or get help with development tasks"

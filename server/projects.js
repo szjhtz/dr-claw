@@ -74,6 +74,18 @@ const PROJECT_PIPELINE_FOLDERS = ['Survey', 'Ideation', 'Experiment', 'Publicati
 const LEGACY_DEFAULT_WORKSPACES_ROOT = path.join(os.homedir(), 'vibelab');
 const CURRENT_DEFAULT_WORKSPACES_ROOT = path.join(os.homedir(), 'dr-claw');
 
+function normalizeSessionMode(value) {
+    return value === 'workspace_qa' ? 'workspace_qa' : 'research';
+}
+
+function extractSessionModeFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') {
+        return 'research';
+    }
+
+    return normalizeSessionMode(metadata.sessionMode || metadata.mode);
+}
+
 function normalizeTaskStatus(status) {
     const raw = String(status || '').trim().toLowerCase();
     if (!raw) return 'pending';
@@ -685,9 +697,11 @@ async function getProjects(userId, progressCallback = null) {
       // C. If it's NOT in DB and OUTSIDE the root -> IGNORE (avoid cluttering with external Claude projects)
       // D. If it's in DB but belongs to someone else -> HIDDEN
 
+      const isManuallyAdded = !!(dbEntry?.metadata?.manuallyAdded || config[entry.name]?.manuallyAdded);
+
       if (dbEntry) {
         if (dbEntry.user_id === userId) {
-          if (await isPathWithinWorkspaceRoots(actualDir, visibleWorkspaceRoots)) {
+          if (isManuallyAdded || await isPathWithinWorkspaceRoots(actualDir, visibleWorkspaceRoots)) {
             discoveredDirectories.push({ entry, actualProjectDir: actualDir, dbEntry });
           } else {
             console.log(`[projects] Skipping external claimed project: ${entry.name} at ${actualDir}`);
@@ -708,9 +722,11 @@ async function getProjects(userId, progressCallback = null) {
       if (!projectConfig?.originalPath) continue;
 
       const dbEntry = globalProjectMap.get(projectName);
+      const isManuallyAdded = !!projectConfig.manuallyAdded;
+
       if (!dbEntry || !dbEntry.user_id) {
-        // Skip projects outside the workspace root
-        if (!await isPathWithinWorkspaceRoots(projectConfig.originalPath, visibleWorkspaceRoots)) {
+        // Skip projects outside the workspace root unless the user explicitly added them.
+        if (!isManuallyAdded && !await isPathWithinWorkspaceRoots(projectConfig.originalPath, visibleWorkspaceRoots)) {
           console.log(`[projects] Skipping external Claude config project: ${projectName} at ${projectConfig.originalPath}`);
           continue;
         }
@@ -732,10 +748,11 @@ async function getProjects(userId, progressCallback = null) {
       // If we're filtering by userId, only include projects that belong to them.
       // If userId is null (timer/broadcast), include everything.
       const isVisible = !userId || dbEntry.user_id === userId;
+      const isManuallyAdded = !!dbEntry.metadata?.manuallyAdded;
 
       if (isVisible) {
-        // Also filter DB projects by workspace root
-        if (!await isPathWithinWorkspaceRoots(dbEntry.path, visibleWorkspaceRoots)) {
+        // Also filter DB projects by workspace root unless the user explicitly added them.
+        if (!isManuallyAdded && !await isPathWithinWorkspaceRoots(dbEntry.path, visibleWorkspaceRoots)) {
           console.log(`[projects] Skipping external DB project: ${dbEntry.id} at ${dbEntry.path}`);
           continue;
         }
@@ -887,7 +904,9 @@ async function getSessions(projectName, limit = 5, offset = 0, userId = null) {
           // Upsert new sessions discovered from files to DB for caching
           if (!dbSessionMap.has(session.id)) {
             const lastActivity = session.lastActivity instanceof Date ? session.lastActivity.toISOString() : session.lastActivity;
-            sessionDb.upsertSession(session.id, projectName, 'claude', session.summary, lastActivity, session.messageCount);
+            sessionDb.upsertSession(session.id, projectName, 'claude', session.summary, lastActivity, session.messageCount, {
+              sessionMode: normalizeSessionMode(session.mode),
+            });
           }
         }
       });
@@ -1020,7 +1039,10 @@ async function parseJsonlSessions(filePath, projectName = null, dbSessionMap = n
                 lastActivity: new Date(),
                 cwd: entry.cwd || '',
                 lastUserMessage: null,
-                lastAssistantMessage: null
+                lastAssistantMessage: null,
+                mode: dbSessionMap && dbSessionMap.has(entry.sessionId)
+                  ? extractSessionModeFromMetadata(dbSessionMap.get(entry.sessionId).metadata)
+                  : 'research'
               });
             }
 
@@ -2069,6 +2091,8 @@ async function getGeminiSessions(projectPath, optionsOrUserId = null) {
     for (const file of files) {
       if (!file.endsWith('.jsonl')) continue;
       const sessionId = path.basename(file, '.jsonl');
+      const indexedSession = dbSessionMap.get(sessionId);
+      const indexedMessageCount = Number(indexedSession?.message_count ?? indexedSession?.messageCount ?? 0);
 
       const filePath = path.join(geminiSessionsDir, file);
       try {
@@ -2081,11 +2105,13 @@ async function getGeminiSessions(projectPath, optionsOrUserId = null) {
         let foundMatchingCwd = false;
         let explicitTitle = null;
         let firstMessageText = null;
+        let messageCount = 0;
 
-        // If we have it in DB, we know it belongs to this project
-        if (dbSessionMap.has(sessionId)) {
+        // If we have it in DB, we know it belongs to this project.
+        // Still rescan when the indexed message count is missing/zero so legacy rows self-heal.
+        if (dbSessionMap.has(sessionId) && indexedMessageCount > 0) {
           foundMatchingCwd = true;
-          explicitTitle = dbSessionMap.get(sessionId).display_name;
+          explicitTitle = indexedSession.display_name;
         } else {
           // Read just the first few lines for metadata to index it
           const fileStream = fsSync.createReadStream(filePath);
@@ -2141,6 +2167,15 @@ async function getGeminiSessions(projectPath, optionsOrUserId = null) {
                     }
                   }
                 }
+
+                const isUserMessage = entry.role === 'user' || (entry.type === 'message' && entry.role === 'user');
+                const isAssistantMessage = entry.role === 'assistant'
+                  || entry.message?.role === 'assistant'
+                  || (entry.type === 'message' && entry.role === 'assistant');
+
+                if (isUserMessage || isAssistantMessage) {
+                  messageCount++;
+                }
               } catch (e) {}
             }
           }
@@ -2157,16 +2192,22 @@ async function getGeminiSessions(projectPath, optionsOrUserId = null) {
           }
 
           // Upsert to database so next time is faster
-          if (!dbSessionMap.has(sessionId)) {
-            sessionDb.upsertSession(sessionId, projectName, 'gemini', finalName, stats.mtime.toISOString(), 0);
-          }
+          const sessionMode = dbSessionMap.has(sessionId)
+            ? extractSessionModeFromMetadata(dbSessionMap.get(sessionId).metadata)
+            : 'research';
+          const resolvedMessageCount = Math.max(indexedMessageCount, messageCount);
+
+          sessionDb.upsertSession(sessionId, projectName, 'gemini', finalName, stats.mtime.toISOString(), resolvedMessageCount, {
+            sessionMode,
+          });
 
           sessions.push({
             id: sessionId,
             name: finalName,
             createdAt: stats.birthtime.toISOString(),
             lastActivity: stats.mtime.toISOString(),
-            messageCount: 0,
+            messageCount: resolvedMessageCount,
+            mode: sessionMode,
             projectPath: projectPath,
             filePath,
             __provider: 'gemini'
@@ -2255,6 +2296,7 @@ async function buildCodexSessionsIndex() {
         lastActivity: sessionData.timestamp ? new Date(sessionData.timestamp) : new Date(),
         cwd: sessionData.cwd,
         model: sessionData.model,
+        mode: normalizeSessionMode(sessionData.mode),
         filePath,
         provider: 'codex',
       };
@@ -2713,7 +2755,10 @@ async function renameSession(projectName, sessionId, newSummary, provider = 'cla
       await fs.appendFile(geminiSessionFile, JSON.stringify(summaryEntry) + '\n');
 
       // Also update Dr. Claw's own index (source of truth)
-      sessionDb.upsertSession(sessionId, projectName, provider, trimmedSummary, new Date().toISOString());
+      const existing = sessionDb.getSessionById(sessionId);
+      sessionDb.upsertSession(sessionId, projectName, provider, trimmedSummary, new Date().toISOString(), 0, {
+        sessionMode: extractSessionModeFromMetadata(existing?.metadata),
+      });
 
       console.log(`[Gemini] Renamed session ${sessionId} to "${trimmedSummary}"`);
       return true;
@@ -2746,7 +2791,10 @@ async function renameSession(projectName, sessionId, newSummary, provider = 'cla
       await db.close();
 
       // Update Dr. Claw's own index
-      sessionDb.upsertSession(sessionId, projectName, provider, trimmedSummary, new Date().toISOString());
+      const existing = sessionDb.getSessionById(sessionId);
+      sessionDb.upsertSession(sessionId, projectName, provider, trimmedSummary, new Date().toISOString(), 0, {
+        sessionMode: extractSessionModeFromMetadata(existing?.metadata),
+      });
 
       console.log(`[Cursor] Renamed session ${sessionId} to "${trimmedSummary}"`);
       return true;
@@ -2801,7 +2849,10 @@ async function renameSession(projectName, sessionId, newSummary, provider = 'cla
           await fs.appendFile(jsonlFile, JSON.stringify(summaryEntry) + '\n');
 
           // Update Dr. Claw's own index
-          sessionDb.upsertSession(sessionId, projectName, provider, trimmedSummary, new Date().toISOString());
+          const existing = sessionDb.getSessionById(sessionId);
+          sessionDb.upsertSession(sessionId, projectName, provider, trimmedSummary, new Date().toISOString(), 0, {
+            sessionMode: extractSessionModeFromMetadata(existing?.metadata),
+          });
 
           console.log(`[Claude] Renamed session ${sessionId} to "${trimmedSummary}"`);
           return true;

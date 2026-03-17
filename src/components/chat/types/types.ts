@@ -1,4 +1,4 @@
-import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
+import type { ImportedProjectAnalysisPrompt, PendingAutoIntake, Project, ProjectSession, SessionMode, SessionProvider } from '../../../types/app';
 
 export type Provider = SessionProvider;
 
@@ -117,6 +117,17 @@ export interface ChatInterfaceProps {
   externalMessageUpdate?: number;
   onTaskClick?: (...args: unknown[]) => void;
   onShowAllTasks?: (() => void) | null;
-  pendingAutoIntake?: boolean;
+  pendingAutoIntake?: PendingAutoIntake | null;
   clearPendingAutoIntake?: () => void;
+  importedProjectAnalysisPrompt?: ImportedProjectAnalysisPrompt | null;
+  clearImportedProjectAnalysisPrompt?: () => void;
+  initialInputDraft?: string | null;
+  newSessionMode?: SessionMode;
+  onNewSessionModeChange?: (mode: SessionMode) => void;
+}
+
+export interface ProviderAvailability {
+  cliAvailable: boolean;
+  cliCommand?: string | null;
+  installHint?: string | null;
 }
