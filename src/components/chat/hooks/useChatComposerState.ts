@@ -90,6 +90,23 @@ const PROGRAMMATIC_SUBMIT_RETRY_DELAY_MS = 50;
 const isTemporarySessionId = (sessionId: string | null | undefined) =>
   Boolean(sessionId && sessionId.startsWith('new-session-'));
 
+const getRouteSessionId = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const match = window.location.pathname.match(/^\/session\/([^/]+)$/);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+};
+
 export function useChatComposerState({
   selectedProject,
   selectedSession,
@@ -615,14 +632,24 @@ export function useChatComposerState({
       setIsUserScrolledUp(false);
       setTimeout(() => scrollToBottom(), 100);
 
-      // Determine the session ID to use.
-      // If we're on the home route ('/') and currentSessionId is null, we are starting a new session.
-      const isExplicitNewSession = !currentSessionId && window.location.pathname === '/';
-      const isNewSession = isExplicitNewSession || (!currentSessionId && !selectedSession?.id);
-      
-      const effectiveSessionId = isExplicitNewSession 
-        ? null 
-        : (currentSessionId || selectedSession?.id || (provider === 'gemini' ? sessionStorage.getItem('geminiSessionId') : sessionStorage.getItem('cursorSessionId')));
+      // Reuse the session currently represented by the route or pending view state.
+      // This prevents interrupted chats from being treated as brand new sessions.
+      const routedSessionId = getRouteSessionId();
+      const providerSessionId =
+        provider === 'gemini'
+          ? sessionStorage.getItem('geminiSessionId')
+          : provider === 'cursor'
+          ? sessionStorage.getItem('cursorSessionId')
+          : null;
+      const pendingViewSessionId = pendingViewSessionRef.current?.sessionId || null;
+      const effectiveSessionId =
+        currentSessionId ||
+        selectedSession?.id ||
+        routedSessionId ||
+        pendingViewSessionId ||
+        providerSessionId;
+      const isExplicitNewSession = window.location.pathname === '/' && !effectiveSessionId;
+      const isNewSession = !effectiveSessionId;
       const sessionToActivate = effectiveSessionId || `new-session-${Date.now()}`;
 
       if (!effectiveSessionId && !selectedSession?.id) {
