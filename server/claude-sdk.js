@@ -632,12 +632,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
       }
     }
 
-    // Clean up session on completion
-    if (capturedSessionId) {
-      removeSession(capturedSessionId);
-    }
-
-    // Send completion event
+    // Send completion event before removing session to avoid race with abort requests
     console.log('Streaming complete, sending claude-complete event');
     ws.send({
       type: 'claude-complete',
@@ -651,6 +646,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
     // can settle immediately after the model finishes streaming.
     const completionTasks = [];
     if (capturedSessionId) {
+      removeSession(capturedSessionId);
       completionTasks.push(flushClaudeSessionIndexReconcile(sessionProjectPath, capturedSessionId));
     }
     completionTasks.push(cleanupTempFiles(tempImagePaths, tempDir));

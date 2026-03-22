@@ -73,10 +73,6 @@ const GEMINI_PLAN_BLOCKED_TOOLS = new Set([
   'Edit'
 ]);
 
-function encodeProjectPath(projectPath) {
-  return path.resolve(projectPath).replace(/[\\/:\s~_]/g, '-');
-}
-
 async function persistGeminiSessionMetadata(sessionId, projectPath, sessionMode) {
   if (!sessionId || !projectPath) return;
 
@@ -1151,10 +1147,10 @@ export async function spawnGemini(command, options = {}, ws) {
       const finalSessionId = capturedSessionId || sessionId || initialKey;
       const sessionData = activeGeminiSessions.get(finalSessionId);
       if (sessionData?.heartbeat) clearInterval(sessionData.heartbeat);
-      activeGeminiSessions.delete(finalSessionId);
       await cleanupGeminiTempFiles(tempFilePaths, tempDir);
       // Send completion event immediately so the UI can settle
       ws.send({ type: 'gemini-complete', sessionId: finalSessionId, exitCode: code, isNewSession: (!sessionId || sessionId.startsWith('new-session-')) && !!command });
+      activeGeminiSessions.delete(finalSessionId);
       // Post-completion housekeeping — runs after the UI receives the completion signal
       if (workingDir && finalSessionId) {
         try {
