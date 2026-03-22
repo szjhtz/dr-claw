@@ -14,6 +14,7 @@
  */
 
 import { Codex } from '@openai/codex-sdk';
+import { recordIndexedSession } from './utils/sessionIndex.js';
 
 // Track active sessions
 const activeCodexSessions = new Map();
@@ -280,6 +281,14 @@ export async function queryCodex(command, options = {}, ws) {
     });
 
     // Send session created event
+    if (workingDirectory) {
+      recordIndexedSession({
+        sessionId: currentSessionId,
+        provider: 'codex',
+        projectPath: workingDirectory,
+        sessionMode: sessionMode || 'research',
+      });
+    }
     sendMessage(ws, {
       type: 'session-created',
       sessionId: currentSessionId,

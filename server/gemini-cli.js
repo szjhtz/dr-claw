@@ -6,6 +6,7 @@ import os from 'os';
 import { createRequestId, waitForToolApproval, matchesToolPermission } from './utils/permissions.js';
 import { ensureProjectSkillLinks } from './projects.js';
 import { writeProjectTemplates } from './templates/index.js';
+import { recordIndexedSession } from './utils/sessionIndex.js';
 
 // Use cross-spawn on Windows for better command execution
 const spawnFunction = process.platform === 'win32' ? crossSpawn : spawn;
@@ -761,6 +762,12 @@ export async function spawnGemini(command, options = {}, ws) {
               if (ws.setSessionId && typeof ws.setSessionId === 'function') ws.setSessionId(capturedSessionId);
               if (!sessionCreatedSent) {
                 sessionCreatedSent = true;
+                recordIndexedSession({
+                  sessionId: capturedSessionId,
+                  provider: 'gemini',
+                  projectPath: workingDir,
+                  sessionMode: sessionMode || 'research',
+                });
                 ws.send({ type: 'session-created', sessionId: capturedSessionId, provider: 'gemini', mode: sessionMode || 'research' });
               }
             }

@@ -20,6 +20,7 @@ import os from 'os';
 import { CLAUDE_MODELS } from '../shared/modelConstants.js';
 import { ensureProjectSkillLinks } from './projects.js';
 import { writeProjectTemplates } from './templates/index.js';
+import { recordIndexedSession } from './utils/sessionIndex.js';
 
 import { createRequestId, waitForToolApproval, resolveToolApproval as resolvePermApproval, matchesToolPermission } from './utils/permissions.js';
 
@@ -529,9 +530,18 @@ async function queryClaudeSDK(command, options = {}, ws) {
         // Send session-created event only once for new sessions
         if (!sessionId && !sessionCreatedSent) {
           sessionCreatedSent = true;
+          if (options.cwd || options.projectPath) {
+            recordIndexedSession({
+              sessionId: capturedSessionId,
+              provider: 'claude',
+              projectPath: options.cwd || options.projectPath,
+              sessionMode: sessionMode || 'research',
+            });
+          }
           ws.send({
             type: 'session-created',
             sessionId: capturedSessionId,
+            provider: 'claude',
             mode: sessionMode || 'research'
           });
         } else {

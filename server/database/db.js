@@ -583,6 +583,34 @@ const sessionDb = {
     }
   },
 
+  getSessionsByProjects: (projectNames = []) => {
+    try {
+      if (!Array.isArray(projectNames) || projectNames.length === 0) {
+        return [];
+      }
+
+      const chunkSize = 900;
+      const allRows = [];
+
+      for (let index = 0; index < projectNames.length; index += chunkSize) {
+        const chunk = projectNames.slice(index, index + chunkSize);
+        const placeholders = chunk.map(() => '?').join(', ');
+        const rows = db.prepare(
+          `SELECT * FROM session_metadata WHERE project_name IN (${placeholders}) ORDER BY datetime(last_activity) DESC, datetime(created_at) DESC`
+        ).all(...chunk);
+        allRows.push(...rows);
+      }
+
+      return allRows.map(row => ({
+        ...row,
+        metadata: row.metadata ? JSON.parse(row.metadata) : null
+      }));
+    } catch (err) {
+      console.error('Error getting sessions for projects:', err.message);
+      return [];
+    }
+  },
+
   // Get metadata for a specific session
   getSessionById: (id) => {
     try {
@@ -602,6 +630,14 @@ const sessionDb = {
       db.prepare('DELETE FROM session_metadata WHERE id = ?').run(id);
     } catch (err) {
       console.error('Error deleting session metadata:', err.message);
+    }
+  },
+
+  deleteSessionsByProject: (projectName) => {
+    try {
+      db.prepare('DELETE FROM session_metadata WHERE project_name = ?').run(projectName);
+    } catch (err) {
+      console.error('Error deleting project session metadata:', err.message);
     }
   }
 };

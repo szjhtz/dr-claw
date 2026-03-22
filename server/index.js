@@ -44,7 +44,7 @@ import pty from 'node-pty';
 import fetch from 'node-fetch';
 import mime from 'mime-types';
 
-import { getProjects, getSessions, getSessionMessages, renameProject, renameSession, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache } from './projects.js';
+import { getProjects, getTrashedProjects, getSessions, getSessionMessages, renameProject, renameSession, deleteSession, deleteProject, restoreProject, deleteTrashedProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache } from './projects.js';
 import { getProjectTokenUsageSummary } from './project-token-usage.js';
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval } from './claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
@@ -668,6 +668,16 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
     }
 });
 
+app.get('/api/projects/trash', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const projects = await getTrashedProjects(userId);
+        res.json(projects);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/projects/token-usage-summary', authenticateToken, async (req, res) => {
     try {
         const projectRefs = req.body?.projects;
@@ -763,9 +773,31 @@ app.delete('/api/projects/:projectName/sessions/:sessionId', authenticateToken, 
 // Delete project endpoint (force=true to delete with sessions)
 app.delete('/api/projects/:projectName', authenticateToken, async (req, res) => {
     try {
+        const userId = req.user?.id;
         const { projectName } = req.params;
         const force = req.query.force === 'true';
-        await deleteProject(projectName, force);
+        await deleteProject(projectName, force, userId);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/projects/trash/:projectName/restore', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        await restoreProject(req.params.projectName, userId);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/projects/trash/:projectName', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const mode = req.query.mode === 'physical' ? 'physical' : 'logical';
+        await deleteTrashedProject(req.params.projectName, mode, userId);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1136,6 +1168,7 @@ class WebSocketWriter {
     this.sessionId = null;
     this.isWebSocketWriter = true;  // Marker for transport detection
     this.telemetryContext = telemetryContext;
+    this.projectPath = null;
   }
 
   send(data) {
@@ -1150,8 +1183,16 @@ class WebSocketWriter {
     this.sessionId = sessionId;
   }
 
+  setProjectPath(projectPath) {
+    this.projectPath = projectPath;
+  }
+
   getSessionId() {
     return this.sessionId;
+  }
+
+  getProjectPath() {
+    return this.projectPath;
   }
 }
 
@@ -1307,6 +1348,7 @@ function handleChatConnection(ws, request) {
                     { ...telemetryContext, telemetryEnabled: commandTelemetryEnabled },
                 );
                 writer.telemetryContext = { ...telemetryContext, provider: 'claude', telemetryEnabled: commandTelemetryEnabled };
+                writer.setProjectPath(data.options?.projectPath || data.options?.cwd || null);
 
                 // Use Claude Agents SDK
                 await queryClaudeSDK(data.command, { ...data.options, env: sessionEnv }, writer);
@@ -1328,6 +1370,7 @@ function handleChatConnection(ws, request) {
                     { ...telemetryContext, telemetryEnabled: commandTelemetryEnabled },
                 );
                 writer.telemetryContext = { ...telemetryContext, provider: 'cursor', telemetryEnabled: commandTelemetryEnabled };
+                writer.setProjectPath(data.options?.projectPath || data.options?.cwd || null);
                 await spawnCursor(data.command, { ...data.options, env: sessionEnv }, writer);
             } else if (data.type === 'codex-command') {
                 console.log('[DEBUG] Codex message:', data.command || '[Continue/Resume]');
@@ -1347,6 +1390,7 @@ function handleChatConnection(ws, request) {
                     { ...telemetryContext, telemetryEnabled: commandTelemetryEnabled },
                 );
                 writer.telemetryContext = { ...telemetryContext, provider: 'codex', telemetryEnabled: commandTelemetryEnabled };
+                writer.setProjectPath(data.options?.projectPath || data.options?.cwd || null);
                 await queryCodex(data.command, { ...data.options, env: sessionEnv }, writer);
             } else if (data.type === 'gemini-command') {
                 console.log('[DEBUG] Gemini message:', data.command || '[Continue/Resume]');
@@ -1366,6 +1410,7 @@ function handleChatConnection(ws, request) {
                     { ...telemetryContext, telemetryEnabled: commandTelemetryEnabled },
                 );
                 writer.telemetryContext = { ...telemetryContext, provider: 'gemini', telemetryEnabled: commandTelemetryEnabled };
+                writer.setProjectPath(data.options?.projectPath || data.options?.cwd || null);
                 await spawnGemini(data.command, { ...data.options, env: sessionEnv }, writer);
             } else if (data.type === 'cursor-resume') {
                 // Backward compatibility: treat as cursor-command with resume and no prompt

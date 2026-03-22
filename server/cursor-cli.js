@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { resolveCursorCliCommand } from './utils/cursorCommand.js';
+import { recordIndexedSession } from './utils/sessionIndex.js';
 
 // Use cross-spawn on Windows for better command execution
 const spawnFunction = process.platform === 'win32' ? crossSpawn : spawn;
@@ -118,6 +119,13 @@ async function spawnCursor(command, options = {}, ws) {
                   // Send session-created event only once for new sessions
                   if (!sessionId && !sessionCreatedSent) {
                     sessionCreatedSent = true;
+                    recordIndexedSession({
+                      sessionId: capturedSessionId,
+                      provider: 'cursor',
+                      projectPath: workingDir,
+                      sessionMode: sessionMode || 'research',
+                      displayName: response.session_title || response.title || null,
+                    });
                     ws.send({
                       type: 'session-created',
                       sessionId: capturedSessionId,

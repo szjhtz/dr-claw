@@ -73,6 +73,187 @@ const PROJECT_SKILL_FOLDERS = ['.claude', '.agents', '.cursor', '.gemini'];
 const PROJECT_PIPELINE_FOLDERS = ['Survey', 'Ideation', 'Experiment', 'Publication', 'Promotion'];
 const LEGACY_DEFAULT_WORKSPACES_ROOT = path.join(os.homedir(), 'vibelab');
 const CURRENT_DEFAULT_WORKSPACES_ROOT = path.join(os.homedir(), 'dr-claw');
+const DELETED_PROJECTS_CONFIG_KEY = '_deletedProjects';
+
+let projectConfigMutationQueue = Promise.resolve();
+
+function isProjectTrashed(projectInfo = null, dbEntry = null) {
+  return Boolean(projectInfo?.trash?.trashedAt || dbEntry?.metadata?.trash?.trashedAt);
+}
+
+function getSuppressedProjectMetadata(projectName, config = null, projectInfo = null) {
+  return projectInfo?.deleted || config?.[DELETED_PROJECTS_CONFIG_KEY]?.[projectName] || null;
+}
+
+function isProjectSuppressed(projectName, config = null, projectInfo = null) {
+  return Boolean(getSuppressedProjectMetadata(projectName, config, projectInfo)?.deletedAt);
+}
+
+function getProjectOwnerUserId(projectInfo = null, dbEntry = null) {
+  return dbEntry?.user_id
+    ?? projectInfo?.ownerUserId
+    ?? projectInfo?.trash?.ownerUserId
+    ?? projectInfo?.deleted?.ownerUserId
+    ?? null;
+}
+
+function getDeletedProjectsStore(config) {
+  if (!config[DELETED_PROJECTS_CONFIG_KEY] || typeof config[DELETED_PROJECTS_CONFIG_KEY] !== 'object') {
+    config[DELETED_PROJECTS_CONFIG_KEY] = {};
+  }
+
+  return config[DELETED_PROJECTS_CONFIG_KEY];
+}
+
+function clearDeletedProjectMetadata(config, projectName) {
+  if (!config?.[DELETED_PROJECTS_CONFIG_KEY]?.[projectName]) {
+    return;
+  }
+
+  delete config[DELETED_PROJECTS_CONFIG_KEY][projectName];
+  if (Object.keys(config[DELETED_PROJECTS_CONFIG_KEY]).length === 0) {
+    delete config[DELETED_PROJECTS_CONFIG_KEY];
+  }
+}
+
+async function readProjectInstanceId(projectPath) {
+  if (!projectPath) {
+    return null;
+  }
+
+  try {
+    const instanceRaw = await fs.readFile(path.join(projectPath, 'instance.json'), 'utf8');
+    const instanceData = JSON.parse(instanceRaw);
+    return typeof instanceData?.instance_id === 'string' && instanceData.instance_id.trim()
+      ? instanceData.instance_id.trim()
+      : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function mutateProjectConfig(mutator) {
+  const operation = projectConfigMutationQueue.then(async () => {
+    const config = await loadProjectConfig();
+    const result = await mutator(config);
+    await saveProjectConfig(config);
+    return result;
+  });
+
+  projectConfigMutationQueue = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+async function pathExists(targetPath) {
+  if (!targetPath) {
+    return false;
+  }
+
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function bootstrapProjectsIndexFromLegacySources(config, projectDb, userId = null, visibleWorkspaceRoots = []) {
+  const candidateProjectNames = new Set(Object.keys(config).filter((key) => !key.startsWith('_')));
+  const claudeProjectsRoot = path.join(os.homedir(), '.claude', 'projects');
+
+  try {
+    const entries = await fs.readdir(claudeProjectsRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        candidateProjectNames.add(entry.name);
+      }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn('[projects] Failed to read Claude projects for bootstrap:', error.message);
+    }
+  }
+
+  let seededCount = 0;
+
+  for (const projectName of candidateProjectNames) {
+    const projectInfo = config[projectName];
+    if (isProjectSuppressed(projectName, config, projectInfo)) {
+      continue;
+    }
+
+    let projectPath = projectInfo?.originalPath || projectInfo?.path || null;
+    if (!projectPath) {
+      projectPath = await extractProjectDirectory(projectName);
+    }
+    if (!projectPath) {
+      continue;
+    }
+
+    const isManuallyAdded = Boolean(projectInfo?.manuallyAdded);
+    if (!isManuallyAdded && visibleWorkspaceRoots.length > 0 && !await isPathWithinWorkspaceRoots(projectPath, visibleWorkspaceRoots)) {
+      continue;
+    }
+
+    const existing = projectDb.getProjectById(projectName);
+    const ownerUserId = existing?.user_id ?? getProjectOwnerUserId(projectInfo, existing) ?? userId ?? null;
+    const metadata = { ...(existing?.metadata || {}) };
+
+    if (isManuallyAdded) {
+      metadata.manuallyAdded = true;
+    } else {
+      delete metadata.manuallyAdded;
+    }
+
+    if (projectInfo?.trash?.trashedAt) {
+      metadata.trash = {
+        ...projectInfo.trash,
+        ownerUserId: projectInfo.trash.ownerUserId ?? ownerUserId,
+      };
+    }
+
+    projectDb.upsertProject(
+      projectName,
+      ownerUserId,
+      existing?.display_name || projectInfo?.displayName || null,
+      projectPath,
+      existing?.is_starred || 0,
+      existing?.last_accessed || null,
+      Object.keys(metadata).length > 0 ? metadata : null,
+    );
+    seededCount += 1;
+  }
+
+  return seededCount;
+}
+
+function buildTrashEntry(projectName, projectInfo = null, dbEntry = null) {
+  const trashMeta = dbEntry?.metadata?.trash || projectInfo?.trash;
+  if (!trashMeta?.trashedAt) {
+    return null;
+  }
+
+  const filesExist = trashMeta.filesExist !== false;
+
+  return {
+    name: projectName,
+    displayName: dbEntry?.display_name || projectInfo?.displayName || trashMeta.displayName || projectName,
+    fullPath: trashMeta.originalPath || dbEntry?.path || projectInfo?.originalPath || '',
+    path: trashMeta.originalPath || dbEntry?.path || projectInfo?.originalPath || '',
+    originalPath: trashMeta.originalPath || projectInfo?.originalPath || '',
+    trashPath: trashMeta.trashPath || dbEntry?.path || '',
+    claudeTrashPath: trashMeta.claudeTrashPath || '',
+    trashedAt: trashMeta.trashedAt,
+    sessionCount:
+      typeof trashMeta.sessionCount === 'number'
+        ? trashMeta.sessionCount
+        : Array.isArray(dbEntry?.metadata?.sessions)
+          ? dbEntry.metadata.sessions.length
+          : 0,
+    canRestore: Boolean(trashMeta.originalPath && filesExist),
+    filesExist,
+  };
+}
 
 function normalizeSessionMode(value) {
     return value === 'workspace_qa' ? 'workspace_qa' : 'research';
@@ -494,7 +675,7 @@ async function saveProjectConfig(config) {
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
 }
 
-function encodeProjectPath(projectPath) {
+export function encodeProjectPath(projectPath) {
   return path.resolve(projectPath).replace(/[\\/:\s~_]/g, '-');
 }
 
@@ -651,200 +832,251 @@ async function extractProjectDirectory(projectName) {
   }
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  };
+
+  const workerCount = Math.max(1, Math.min(concurrency, items.length || 1));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+function mapIndexedSessionToProjectSession(session, provider) {
+  const metadata = session?.metadata && typeof session.metadata === 'object' ? session.metadata : {};
+  const mode = extractSessionModeFromMetadata(metadata);
+  const lastActivity = session?.last_activity || session?.lastActivity || session?.created_at || session?.createdAt || null;
+  const createdAt = session?.created_at || session?.createdAt || lastActivity;
+  const messageCount = Number(session?.message_count ?? session?.messageCount ?? 0);
+  const baseName = session?.display_name || session?.name || session?.summary || null;
+
+  if (provider === 'cursor') {
+    return {
+      id: session.id,
+      name: baseName || 'Untitled Session',
+      createdAt,
+      lastActivity,
+      messageCount,
+      mode,
+      __provider: 'cursor',
+    };
+  }
+
+  if (provider === 'codex') {
+    return {
+      id: session.id,
+      summary: baseName || 'Codex Session',
+      name: baseName || 'Codex Session',
+      createdAt,
+      lastActivity,
+      messageCount,
+      mode,
+      __provider: 'codex',
+    };
+  }
+
+  if (provider === 'gemini') {
+    return {
+      id: session.id,
+      summary: baseName || 'Gemini Session',
+      name: baseName || 'Gemini Session',
+      createdAt,
+      lastActivity,
+      messageCount,
+      mode,
+      __provider: 'gemini',
+    };
+  }
+
+  return {
+    id: session.id,
+    summary: baseName || 'New Session',
+    createdAt,
+    lastActivity,
+    messageCount,
+    mode,
+    __provider: 'claude',
+  };
+}
+
 async function getProjects(userId, progressCallback = null) {
-  const { projectDb } = await import('./database/db.js');
-  const claudeDir = path.join(os.homedir(), '.claude', 'projects');
+  const { projectDb, sessionDb } = await import('./database/db.js');
   const config = await loadProjectConfig();
   const projects = [];
-  const existingProjects = new Set();
 
   await migrateLegacyProjects(config, projectDb);
 
-  // Resolve workspace roots for filtering. During the default-root migration we keep
-  // the legacy root visible so existing users do not lose access mid-upgrade.
   const visibleWorkspaceRoots = await getVisibleWorkspaceRoots(config._workspacesRoot || null);
-  const codexSessionsIndexRef = { sessionsByProject: null };
   let totalProjects = 0;
   let processedProjects = 0;
-  let configDirty = false;
 
-  // 1. Fetch projects belonging to THIS user
-  const userProjects = projectDb.getAllProjects(userId);
-  const userProjectMap = new Map(userProjects.map(p => [p.id, p]));
-
-  // 2. Fetch ALL projects from DB to see what's already claimed by OTHERS
-  const allDbProjects = projectDb.getAllProjects(); // userId=null gets all
-  const globalProjectMap = new Map(allDbProjects.map(p => [p.id, p]));
+  let dbProjects = projectDb.getAllProjects(userId || null);
+  if (dbProjects.length === 0) {
+    const seededCount = await bootstrapProjectsIndexFromLegacySources(
+      config,
+      projectDb,
+      userId || null,
+      visibleWorkspaceRoots,
+    );
+    if (seededCount > 0) {
+      dbProjects = projectDb.getAllProjects(userId || null);
+    }
+  }
 
   try {
-    // Check if the .claude/projects directory exists
-    await fs.access(claudeDir);
-
-    // Get ALL existing Claude project folders
-    const entries = await fs.readdir(claudeDir, { withFileTypes: true });
-    const directories = entries.filter(e => e.isDirectory());
-
-    const discoveredDirectories = [];
-    for (const entry of directories) {
-      const actualDir = await extractProjectDirectory(entry.name);
-      if (!actualDir) continue;
-
-      const dbEntry = globalProjectMap.get(entry.name);
-
-      // LOGIC FOR VISIBILITY:
-      // A. If it's already in DB and belongs to THIS user -> Visible
-      // B. If it's NOT in DB but is within the Dr. Claw workspace root -> Visible & Auto-claim
-      // C. If it's NOT in DB and OUTSIDE the root -> IGNORE (avoid cluttering with external Claude projects)
-      // D. If it's in DB but belongs to someone else -> HIDDEN
-
-      const isManuallyAdded = !!(dbEntry?.metadata?.manuallyAdded || config[entry.name]?.manuallyAdded);
-
-      if (dbEntry) {
-        if (dbEntry.user_id === userId) {
-          if (isManuallyAdded || await isPathWithinWorkspaceRoots(actualDir, visibleWorkspaceRoots)) {
-            discoveredDirectories.push({ entry, actualProjectDir: actualDir, dbEntry });
-          } else {
-            console.log(`[projects] Skipping external claimed project: ${entry.name} at ${actualDir}`);
-          }
-        }
-      } else {
-        if (await isPathWithinWorkspaceRoots(actualDir, visibleWorkspaceRoots)) {
-          discoveredDirectories.push({ entry, actualProjectDir: actualDir, dbEntry: null });
-        } else {
-          console.log(`[projects] Skipping external Claude project: ${entry.name} at ${actualDir}`);
-        }
+    const visibleProjects = [];
+    for (const dbEntry of dbProjects) {
+      const projectInfo = config[dbEntry.id];
+      if (isProjectTrashed(projectInfo, dbEntry) || isProjectSuppressed(dbEntry.id, config, projectInfo)) {
+        continue;
       }
-      existingProjects.add(entry.name);
+
+      const projectPath = dbEntry.path || projectInfo?.originalPath || null;
+      if (!projectPath) {
+        continue;
+      }
+
+      const isManuallyAdded = Boolean(dbEntry.metadata?.manuallyAdded || projectInfo?.manuallyAdded);
+      if (!isManuallyAdded && !await isPathWithinWorkspaceRoots(projectPath, visibleWorkspaceRoots)) {
+        console.log(`[projects] Skipping external DB project: ${dbEntry.id} at ${projectPath}`);
+        continue;
+      }
+
+      visibleProjects.push({
+        entry: { name: dbEntry.id },
+        actualProjectDir: projectPath,
+        dbEntry,
+      });
     }
 
-    // Process unclaimed projects from Claude config too
-    for (const [projectName, projectConfig] of Object.entries(config)) {
-      if (!projectConfig?.originalPath) continue;
+    const projectNames = visibleProjects.map(({ entry }) => entry.name);
+    const indexedSessions = sessionDb.getSessionsByProjects(projectNames);
+    const sessionsByProject = new Map();
 
-      const dbEntry = globalProjectMap.get(projectName);
-      const isManuallyAdded = !!projectConfig.manuallyAdded;
-
-      if (!dbEntry || !dbEntry.user_id) {
-        // Skip projects outside the workspace root unless the user explicitly added them.
-        if (!isManuallyAdded && !await isPathWithinWorkspaceRoots(projectConfig.originalPath, visibleWorkspaceRoots)) {
-          console.log(`[projects] Skipping external Claude config project: ${projectName} at ${projectConfig.originalPath}`);
-          continue;
-        }
-
-        // This project exists in config but not assigned in DB yet
-        // Only add if not already added from filesystem scan
-        if (!discoveredDirectories.some(d => d.entry.name === projectName)) {
-          discoveredDirectories.push({
-            entry: { name: projectName },
-            actualProjectDir: projectConfig.originalPath,
-            dbEntry: null
-          });
-        }
+    for (const session of indexedSessions) {
+      if (!sessionsByProject.has(session.project_name)) {
+        sessionsByProject.set(session.project_name, []);
       }
+      sessionsByProject.get(session.project_name).push(session);
     }
 
-    // 3. Add projects ALREADY in DB that weren't discovered yet
-    for (const dbEntry of allDbProjects) {
-      // If we're filtering by userId, only include projects that belong to them.
-      // If userId is null (timer/broadcast), include everything.
-      const isVisible = !userId || dbEntry.user_id === userId;
-      const isManuallyAdded = !!dbEntry.metadata?.manuallyAdded;
+    totalProjects = visibleProjects.length;
 
-      if (isVisible) {
-        // Also filter DB projects by workspace root unless the user explicitly added them.
-        if (!isManuallyAdded && !await isPathWithinWorkspaceRoots(dbEntry.path, visibleWorkspaceRoots)) {
-          console.log(`[projects] Skipping external DB project: ${dbEntry.id} at ${dbEntry.path}`);
-          continue;
-        }
+    const hydratedProjects = await mapWithConcurrency(visibleProjects, 6, async ({ entry, actualProjectDir, dbEntry }) => {
+      processedProjects++;
 
-        if (!discoveredDirectories.some(d => d.entry.name === dbEntry.id)) {
-          discoveredDirectories.push({
-            entry: { name: dbEntry.id },
-            actualProjectDir: dbEntry.path,
-            dbEntry: dbEntry
-          });
-        }
+      if (progressCallback) {
+        progressCallback({ phase: 'loading', current: processedProjects, total: totalProjects, currentProject: entry.name });
       }
-    }
 
-    totalProjects = discoveredDirectories.length;
+      const projectInfo = config[entry.name];
+      const displayName = dbEntry?.display_name || projectInfo?.displayName || await generateDisplayName(entry.name, actualProjectDir);
 
-    for (const { entry, actualProjectDir, dbEntry } of discoveredDirectories) {
-        processedProjects++;
+      let dirCreatedAt = dbEntry?.created_at;
+      if (!dirCreatedAt) {
+        try {
+          const dirStat = await fs.stat(actualProjectDir);
+          dirCreatedAt = dirStat.birthtime.toISOString();
+        } catch (_) {}
+      }
 
-        if (progressCallback) {
-          progressCallback({ phase: 'loading', current: processedProjects, total: totalProjects, currentProject: entry.name });
-        }
+      const project = {
+        name: entry.name,
+        path: actualProjectDir,
+        displayName,
+        fullPath: actualProjectDir,
+        isCustomName: !!(dbEntry?.display_name || projectInfo?.displayName),
+        createdAt: dirCreatedAt,
+        isStarred: !!dbEntry?.is_starred,
+        sessions: [],
+        sessionMeta: { hasMore: false, total: 0 }
+      };
 
-        // Get info
-        const displayName = dbEntry?.display_name || config[entry.name]?.displayName || await generateDisplayName(entry.name, actualProjectDir);
+      const projectSessions = sessionsByProject.get(entry.name) || [];
+      const claudeSessions = projectSessions.filter((session) => session.provider === 'claude');
+      const cursorSessions = projectSessions.filter((session) => session.provider === 'cursor');
+      const codexSessions = projectSessions.filter((session) => session.provider === 'codex');
+      const geminiSessions = projectSessions.filter((session) => session.provider === 'gemini');
 
-        let dirCreatedAt = dbEntry?.created_at;
-        if (!dirCreatedAt) {
-          try {
-            const dirStat = await fs.stat(actualProjectDir);
-            dirCreatedAt = dirStat.birthtime.toISOString();
-          } catch (_) {}
-        }
+      project.sessions = claudeSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'claude'));
+      project.sessionMeta = {
+        total: claudeSessions.length,
+        hasMore: claudeSessions.length > 5,
+      };
+      project.cursorSessions = cursorSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'cursor'));
+      project.codexSessions = codexSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'codex'));
+      project.geminiSessions = geminiSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'gemini'));
 
-        const project = {
-          name: entry.name,
-          path: actualProjectDir,
-          displayName: displayName,
-          fullPath: actualProjectDir,
-          isCustomName: !!(dbEntry?.display_name || config[entry.name]?.displayName),
-          createdAt: dirCreatedAt,
-          isStarred: !!dbEntry?.is_starred,
-          sessions: [],
-          sessionMeta: { hasMore: false, total: 0 }
+      const taskmasterResult = await detectTaskMasterFolder(actualProjectDir).catch(() => null);
+
+      if (taskmasterResult) {
+        const tm = taskmasterResult;
+        project.taskmaster = {
+          hasTaskmaster: tm.hasTaskmaster,
+          hasEssentialFiles: tm.hasEssentialFiles,
+          metadata: tm.metadata,
+          status: tm.hasTaskmaster && tm.hasEssentialFiles ? 'configured' : 'not-configured'
         };
+        project.pipeline = project.taskmaster;
+      }
 
-        // CLAIM LOGIC: If not assigned, assign to current user now
-        if (!dbEntry || !dbEntry.user_id) {
-          projectDb.upsertProject(
-            entry.name,
-            userId,
-            displayName,
-            actualProjectDir,
-            project.isStarred ? 1 : 0,
-            null,
-            config[entry.name]?.manuallyAdded ? { manuallyAdded: true } : null
-          );
-        }
+      return project;
+    });
 
-        // Try to get sessions
-        try {
-          const sessionResult = await getSessions(entry.name, 5, 0, userId);
-          project.sessions = sessionResult.sessions || [];
-          project.sessionMeta = { hasMore: sessionResult.hasMore, total: sessionResult.total };
-        } catch (e) {
-          project.sessionMeta = { hasMore: false, total: 0 };
-        }
-
-        // Fetch other sessions
-        try { project.cursorSessions = await getCursorSessions(actualProjectDir); } catch (e) {}
-        try { project.codexSessions = await getCodexSessions(actualProjectDir, { indexRef: codexSessionsIndexRef }); } catch (e) {}
-        try { project.geminiSessions = await getGeminiSessions(actualProjectDir, userId); } catch (e) {}
-
-        // TaskMaster detection
-        try {
-          const tm = await detectTaskMasterFolder(actualProjectDir);
-          project.taskmaster = {
-            hasTaskmaster: tm.hasTaskmaster,
-            hasEssentialFiles: tm.hasEssentialFiles,
-            metadata: tm.metadata,
-            status: tm.hasTaskmaster && tm.hasEssentialFiles ? 'configured' : 'not-configured'
-          };
-          project.pipeline = project.taskmaster;
-        } catch (e) {}
-
-      projects.push(project);
-    }
+    projects.push(...hydratedProjects.filter(Boolean));
   } catch (error) {
-    if (error.code !== 'ENOENT') console.error('Error reading projects directory:', error);
+    console.error('Error reading projects from database:', error);
   }
 
   return projects;
+}
+
+async function getTrashedProjects(userId = null) {
+  const { projectDb } = await import('./database/db.js');
+  const config = await loadProjectConfig();
+  const allDbProjects = projectDb.getAllProjects();
+  const dbProjectMap = new Map(allDbProjects.map((entry) => [entry.id, entry]));
+  const allProjectNames = new Set([
+    ...Object.keys(config).filter((key) => !key.startsWith('_')),
+    ...allDbProjects.map((entry) => entry.id),
+  ]);
+
+  const trashEntries = [];
+
+  for (const projectName of allProjectNames) {
+    const projectInfo = config[projectName];
+    const dbEntry = dbProjectMap.get(projectName);
+
+    if (!isProjectTrashed(projectInfo, dbEntry)) {
+      continue;
+    }
+
+    const ownerUserId = getProjectOwnerUserId(projectInfo, dbEntry);
+    if (userId && ownerUserId !== userId) {
+      continue;
+    }
+
+    const trashEntry = buildTrashEntry(projectName, projectInfo, dbEntry);
+    if (trashEntry) {
+      trashEntries.push(trashEntry);
+    }
+  }
+
+  return trashEntries.sort(
+    (left, right) => new Date(right.trashedAt).getTime() - new Date(left.trashedAt).getTime(),
+  );
 }
 
 async function getSessions(projectName, limit = 5, offset = 0, userId = null) {
@@ -1416,36 +1648,31 @@ async function getSessionMessages(projectName, sessionId, limit = null, offset =
 // Rename a project's display name
 async function renameProject(projectName, newDisplayName, userId = null) {
   const { projectDb } = await import('./database/db.js');
-  const config = await loadProjectConfig();
   const trimmedName = (newDisplayName || '').trim();
 
-  // 1. Update Dr. Claw Database (Source of Truth)
   const existing = projectDb.getProjectById(projectName);
   if (existing) {
-    // Basic security: if project exists but belongs to someone else, don't allow rename
     if (userId && existing.user_id && existing.user_id !== userId) {
       throw new Error('You do not have permission to rename this project');
     }
     projectDb.updateProjectName(projectName, trimmedName);
   } else {
-    // If not in DB yet, find its path and upsert for this user
     const actualPath = await extractProjectDirectory(projectName);
     projectDb.upsertProject(projectName, userId, trimmedName, actualPath);
   }
 
-  // 2. Sync back to Claude config (for CLI compatibility)
-  if (!trimmedName) {
-    // Remove custom name if empty, will fall back to auto-generated
-    if (config[projectName]) {
-      delete config[projectName].displayName;
-      // Only remove the entire entry if no other properties remain
-      if (Object.keys(config[projectName]).length === 0) {
-        delete config[projectName];
+  await mutateProjectConfig(async (config) => {
+    if (!trimmedName) {
+      if (config[projectName]) {
+        delete config[projectName].displayName;
+        if (Object.keys(config[projectName]).length === 0) {
+          delete config[projectName];
+        }
       }
+      return;
     }
-  } else {
+
     if (!config[projectName]) {
-      // If project doesn't exist in config yet, create a skeleton entry
       const actualPath = await extractProjectDirectory(projectName);
       config[projectName] = {
         originalPath: actualPath
@@ -1453,9 +1680,8 @@ async function renameProject(projectName, newDisplayName, userId = null) {
     }
 
     config[projectName].displayName = trimmedName;
-  }
+  });
 
-  await saveProjectConfig(config);
   return true;
 }
 
@@ -1535,41 +1761,199 @@ async function isProjectEmpty(projectName) {
   }
 }
 
-// Delete a project (force=true to delete even with sessions)
-async function deleteProject(projectName, force = false) {
-  const { projectDb } = await import('./database/db.js');
-  const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
+// Delete a project (force=true to delete with sessions). This hides the project and records it in trash metadata.
+async function deleteProject(projectName, force = false, userId = null) {
+  const { projectDb, sessionDb } = await import('./database/db.js');
 
   try {
+    const existing = projectDb.getProjectById(projectName);
+    const initialConfig = await loadProjectConfig();
+    const initialProjectInfo = initialConfig[projectName];
+    const ownerUserId = existing?.user_id ?? getProjectOwnerUserId(initialProjectInfo, existing) ?? userId ?? null;
+
+    if (userId && ownerUserId && ownerUserId !== userId) {
+      throw new Error('You do not have permission to delete this project');
+    }
+
     const isEmpty = await isProjectEmpty(projectName);
     if (!isEmpty && !force) {
       throw new Error('Cannot delete project with existing sessions');
     }
 
-    const config = await loadProjectConfig();
-    let projectPath = config[projectName]?.path || config[projectName]?.originalPath;
+    if (isProjectTrashed(initialProjectInfo, existing)) {
+      return true;
+    }
 
-    // Fallback to extractProjectDirectory if projectPath is not in config
+    const sessionCount = sessionDb.getSessionsByProject(projectName).length;
+    let projectPath = initialProjectInfo?.path || initialProjectInfo?.originalPath || existing?.path || null;
     if (!projectPath) {
       projectPath = await extractProjectDirectory(projectName);
     }
 
-    // Remove the project directory (includes all Claude sessions)
-    await fs.rm(projectDir, { recursive: true, force: true });
+    const trashedAt = new Date().toISOString();
+    const filesExist = await pathExists(projectPath);
+    const instanceId = await readProjectInstanceId(projectPath);
+    const displayName = existing?.display_name || initialProjectInfo?.displayName || path.basename(projectPath || projectName);
 
-    // Delete the actual project folder from disk
-    if (projectPath) {
-      try {
-        await fs.rm(projectPath, { recursive: true, force: true });
-      } catch (err) {
-        console.warn(`Failed to delete project folder ${projectPath}:`, err.message);
+    const mutationResult = await mutateProjectConfig((config) => {
+      const currentConfig = config[projectName] || {};
+      if (isProjectTrashed(currentConfig, existing)) {
+        return {
+          alreadyTrashed: true,
+          currentConfig,
+          trashMetadata: currentConfig.trash || existing?.metadata?.trash || null,
+        };
       }
+
+      clearDeletedProjectMetadata(config, projectName);
+      const trashMetadata = {
+        ...(currentConfig.trash || {}),
+        trashedAt,
+        originalPath: projectPath,
+        trashPath: '',
+        claudeTrashPath: '',
+        sessionCount,
+        displayName,
+        filesExist,
+        ownerUserId,
+        instanceId,
+      };
+
+      config[projectName] = {
+        ...currentConfig,
+        originalPath: currentConfig.originalPath || projectPath,
+        ownerUserId,
+        trash: trashMetadata,
+      };
+      delete config[projectName].deleted;
+
+      return {
+        alreadyTrashed: false,
+        currentConfig: config[projectName],
+        trashMetadata,
+      };
+    });
+
+    if (mutationResult.alreadyTrashed) {
+      return true;
     }
 
-    // Delete all Codex sessions associated with this project
-    if (projectPath) {
+    const metadata = {
+      ...(existing?.metadata || {}),
+      trash: mutationResult.trashMetadata,
+    };
+
+    if (mutationResult.currentConfig?.manuallyAdded || existing?.metadata?.manuallyAdded) {
+      metadata.manuallyAdded = true;
+    } else {
+      delete metadata.manuallyAdded;
+    }
+
+    projectDb.upsertProject(
+      projectName,
+      ownerUserId,
+      existing?.display_name || initialProjectInfo?.displayName || null,
+      projectPath,
+      existing?.is_starred || 0,
+      existing?.last_accessed || null,
+      Object.keys(metadata).length > 0 ? metadata : null,
+    );
+    projectDirectoryCache.delete(projectName);
+
+    return true;
+  } catch (error) {
+    console.error(`Error deleting project ${projectName}:`, error);
+    throw error;
+  }
+}
+
+async function restoreProject(projectName, userId = null) {
+  const { projectDb } = await import('./database/db.js');
+  const config = await loadProjectConfig();
+  const existing = projectDb.getProjectById(projectName);
+  const projectInfo = config[projectName];
+  const ownerUserId = existing?.user_id ?? getProjectOwnerUserId(projectInfo, existing) ?? userId ?? null;
+
+  if (userId && ownerUserId && ownerUserId !== userId) {
+    throw new Error('You do not have permission to restore this project');
+  }
+
+  const trashMeta = existing?.metadata?.trash || projectInfo?.trash;
+  if (!trashMeta?.trashedAt) {
+    throw new Error('Project is not in trash');
+  }
+
+  const originalPath = trashMeta.originalPath;
+  if (!originalPath) {
+    throw new Error('Original project path is missing');
+  }
+
+  if (!await pathExists(originalPath)) {
+    throw new Error('Project files are missing from the original path and cannot be restored');
+  }
+
+  const nextMetadata = { ...(existing?.metadata || {}) };
+  delete nextMetadata.trash;
+
+  projectDb.upsertProject(
+    projectName,
+    ownerUserId,
+    existing?.display_name || projectInfo?.displayName || trashMeta.displayName || null,
+    originalPath,
+    existing?.is_starred || 0,
+    existing?.last_accessed || null,
+    Object.keys(nextMetadata).length > 0 ? nextMetadata : null,
+  );
+
+  await mutateProjectConfig((nextConfig) => {
+    const nextProjectInfo = {
+      ...(nextConfig[projectName] || {}),
+      originalPath,
+      ownerUserId,
+    };
+    delete nextProjectInfo.trash;
+    delete nextProjectInfo.deleted;
+    clearDeletedProjectMetadata(nextConfig, projectName);
+    nextConfig[projectName] = nextProjectInfo;
+  });
+
+  await ensureProjectSkillLinks(originalPath);
+  projectDirectoryCache.delete(projectName);
+  return true;
+}
+
+async function deleteTrashedProject(projectName, mode = 'logical', userId = null) {
+  const { projectDb, sessionDb } = await import('./database/db.js');
+  const config = await loadProjectConfig();
+  const existing = projectDb.getProjectById(projectName);
+  const projectInfo = config[projectName];
+  const ownerUserId = existing?.user_id ?? getProjectOwnerUserId(projectInfo, existing) ?? userId ?? null;
+
+  if (userId && ownerUserId && ownerUserId !== userId) {
+    throw new Error('You do not have permission to delete this trashed project');
+  }
+
+  const trashMeta = existing?.metadata?.trash || projectInfo?.trash;
+  if (!trashMeta?.trashedAt) {
+    throw new Error('Project is not in trash');
+  }
+
+  if (mode === 'physical') {
+    if (trashMeta.originalPath && await pathExists(trashMeta.originalPath)) {
+      const storedInstanceId = trashMeta.instanceId || projectInfo?.trash?.instanceId || null;
+      if (!storedInstanceId) {
+        throw new Error('Cannot safely delete project files because this trash entry has no recorded instance identity. Use logical delete instead.');
+      }
+
+      const currentInstanceId = await readProjectInstanceId(trashMeta.originalPath);
+      if (!currentInstanceId || currentInstanceId !== storedInstanceId) {
+        throw new Error('Project files at the original path no longer match this trash entry. Refusing physical delete.');
+      }
+
+      await fs.rm(trashMeta.originalPath, { recursive: true, force: true });
+
       try {
-        const codexSessions = await getCodexSessions(projectPath, { limit: 0 });
+        const codexSessions = await getCodexSessions(trashMeta.originalPath, { limit: 0 });
         for (const session of codexSessions) {
           try {
             await deleteCodexSession(session.id);
@@ -1581,27 +1965,48 @@ async function deleteProject(projectName, force = false) {
         console.warn('Failed to delete Codex sessions:', err.message);
       }
 
-      // Delete Cursor sessions directory if it exists
       try {
-        const hash = crypto.createHash('md5').update(projectPath).digest('hex');
+        const hash = crypto.createHash('md5').update(trashMeta.originalPath).digest('hex');
         const cursorProjectDir = path.join(os.homedir(), '.cursor', 'chats', hash);
         await fs.rm(cursorProjectDir, { recursive: true, force: true });
-      } catch (err) {
-        // Cursor dir may not exist, ignore
+      } catch (_) {
+        // Ignore missing Cursor artifacts
       }
     }
 
-    // Remove from project config
-    delete config[projectName];
-    await saveProjectConfig(config);
-    projectDb.deleteProject(projectName);
-    projectDirectoryCache.delete(projectName);
+    try {
+      const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
+      await fs.rm(projectDir, { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`Failed to delete Claude project dir for ${projectName}:`, err.message);
+    }
 
+    await mutateProjectConfig((nextConfig) => {
+      delete nextConfig[projectName];
+      clearDeletedProjectMetadata(nextConfig, projectName);
+    });
+    projectDb.deleteProject(projectName);
+    sessionDb.deleteSessionsByProject(projectName);
+    projectDirectoryCache.delete(projectName);
     return true;
-  } catch (error) {
-    console.error(`Error deleting project ${projectName}:`, error);
-    throw error;
   }
+
+  const deletedAt = new Date().toISOString();
+  await mutateProjectConfig((nextConfig) => {
+    const deletedProjects = getDeletedProjectsStore(nextConfig);
+    deletedProjects[projectName] = {
+      deletedAt,
+      ownerUserId,
+      originalPath: trashMeta.originalPath || projectInfo?.originalPath || existing?.path || '',
+      displayName: existing?.display_name || projectInfo?.displayName || trashMeta.displayName || projectName,
+    };
+    delete nextConfig[projectName];
+  });
+
+  projectDb.deleteProject(projectName);
+  sessionDb.deleteSessionsByProject(projectName);
+  projectDirectoryCache.delete(projectName);
+  return true;
 }
 
 /**
@@ -1899,32 +2304,27 @@ async function addProjectManually(projectPath, displayName = null, userId = null
   const absolutePath = path.resolve(projectPath);
 
   try {
-    // Check if the path exists
     await fs.access(absolutePath);
   } catch (error) {
     throw new Error(`Path does not exist: ${absolutePath}`);
   }
 
-  // Generate project name (encode path for use as directory name)
   const projectName = absolutePath.replace(/[\\/:\s~_]/g, '-');
 
-  // Check if project already exists in config
-  const config = await loadProjectConfig();
-
-  // 1. Sync to Database (Source of Truth)
   projectDb.upsertProject(projectName, userId, displayName, absolutePath, 0, new Date().toISOString(), { manuallyAdded: true });
 
-  // 2. Sync to Claude Config (compatibility)
-  config[projectName] = {
-    manuallyAdded: true,
-    originalPath: absolutePath
-  };
+  await mutateProjectConfig((config) => {
+    config[projectName] = {
+      ...(config[projectName] || {}),
+      manuallyAdded: true,
+      originalPath: absolutePath,
+      ownerUserId: config[projectName]?.ownerUserId ?? userId ?? null,
+    };
 
-  if (displayName) {
-    config[projectName].displayName = displayName;
-  }
-
-  await saveProjectConfig(config);
+    if (displayName) {
+      config[projectName].displayName = displayName;
+    }
+  });
 
   await ensureProjectSkillLinks(absolutePath);
 
@@ -2059,172 +2459,177 @@ async function getGeminiSessions(projectPath, optionsOrUserId = null) {
   const options = optionsOrUserId && typeof optionsOrUserId === 'object' && !Array.isArray(optionsOrUserId)
     ? optionsOrUserId
     : {};
-  const { limit = 5 } = options;
+  const { limit = 5, indexRef = null } = options;
   try {
-    const { sessionDb } = await import('./database/db.js');
     const normalizedProjectPath = await normalizeComparablePath(projectPath);
     const normalizedLegacyProjectPath = await normalizeComparablePath(remapCurrentProjectPathToLegacy(projectPath));
-    const geminiSessionsDir = path.join(os.homedir(), '.gemini', 'sessions');
-    const projectName = encodeProjectPath(projectPath);
-    const legacyProjectName = remapCurrentProjectPathToLegacy(projectPath)
-      ? encodeProjectPath(remapCurrentProjectPathToLegacy(projectPath))
-      : null;
-
-    try {
-      await fs.access(geminiSessionsDir);
-    } catch (error) {
+    if (!normalizedProjectPath) {
       return [];
     }
 
-    const files = await fs.readdir(geminiSessionsDir);
-    const sessions = [];
-
-    // Fetch indexed sessions from database for quick lookup
-    const dbSessions = [
-      ...sessionDb.getSessionsByProject(projectName),
-      ...(legacyProjectName && legacyProjectName !== projectName
-        ? sessionDb.getSessionsByProject(legacyProjectName)
-        : [])
-    ];
-    const dbSessionMap = new Map(dbSessions.map(s => [s.id, s]));
-
-    for (const file of files) {
-      if (!file.endsWith('.jsonl')) continue;
-      const sessionId = path.basename(file, '.jsonl');
-      const indexedSession = dbSessionMap.get(sessionId);
-      const indexedMessageCount = Number(indexedSession?.message_count ?? indexedSession?.messageCount ?? 0);
-
-      const filePath = path.join(geminiSessionsDir, file);
-      try {
-        const stats = await fs.stat(filePath);
-
-        // If we already have this in DB and it was manually renamed,
-        // we might still need to check if it belongs to this project
-        // if it's not already in the dbSessionMap.
-
-        let foundMatchingCwd = false;
-        let explicitTitle = null;
-        let firstMessageText = null;
-        let messageCount = 0;
-
-        // If we have it in DB, we know it belongs to this project.
-        // Still rescan when the indexed message count is missing/zero so legacy rows self-heal.
-        if (dbSessionMap.has(sessionId) && indexedMessageCount > 0) {
-          foundMatchingCwd = true;
-          explicitTitle = indexedSession.display_name;
-        } else {
-          // Read just the first few lines for metadata to index it
-          const fileStream = fsSync.createReadStream(filePath);
-          const rl = readline.createInterface({
-            input: fileStream,
-            crlfDelay: Infinity
-          });
-
-          let lineCount = 0;
-
-          for await (const line of rl) {
-            lineCount++;
-            if (lineCount > 2000) break;
-
-            if (line.trim()) {
-              try {
-                const entry = JSON.parse(line);
-
-                // 1. CWD Match
-                if (!foundMatchingCwd) {
-                  const sessionCwd = entry.cwd || entry.payload?.cwd;
-                  if (sessionCwd) {
-                    const normalizedSessionCwd = await normalizeComparablePath(sessionCwd);
-                    if (
-                      normalizedSessionCwd === normalizedProjectPath ||
-                      (normalizedLegacyProjectPath && normalizedSessionCwd === normalizedLegacyProjectPath)
-                    ) {
-                      foundMatchingCwd = true;
-                    }
-                  }
-                }
-
-                // 2. Explicit Title
-                const title = entry.summary || entry.title || entry.payload?.title || entry.payload?.summary;
-                if (title && typeof title === 'string' && title.trim() &&
-                    !title.includes('Gemini Session') && !title.includes('New Session')) {
-                  explicitTitle = title.trim();
-                }
-
-                // 3. User Message Extraction
-                if (!firstMessageText && (entry.role === 'user' || (entry.type === 'message' && entry.role === 'user'))) {
-                  let content = entry.content || entry.message?.content || entry.payload?.message?.content;
-                  if (content) {
-                    let textContent = typeof content === 'string' ? content :
-                      Array.isArray(content) ? content.map(part => part.text || (typeof part === 'string' ? part : '')).join(' ') : '';
-
-                    if (textContent.trim()) {
-                      let cleaned = textContent.trim();
-                      if (!cleaned.includes('Base directory for this skill:') && !cleaned.startsWith('<command-name>')) {
-                        const helpMatch = cleaned.match(/Please help me with ["'](.*?)["']/);
-                        firstMessageText = helpMatch ? helpMatch[1] : cleaned.split('\n')[0].replace(/#+\s*/, '').trim();
-                      }
-                    }
-                  }
-                }
-
-                const isUserMessage = entry.role === 'user' || (entry.type === 'message' && entry.role === 'user');
-                const isAssistantMessage = entry.role === 'assistant'
-                  || entry.message?.role === 'assistant'
-                  || (entry.type === 'message' && entry.role === 'assistant');
-
-                if (isUserMessage || isAssistantMessage) {
-                  messageCount++;
-                }
-              } catch (e) {}
-            }
-          }
-          rl.close();
-        }
-
-        if (foundMatchingCwd) {
-          let finalName = explicitTitle || firstMessageText;
-          if (finalName) {
-            finalName = finalName.replace(/[\*\_\`]/g, '');
-            if (finalName.length > 50) finalName = finalName.substring(0, 47) + '...';
-          } else {
-            finalName = 'Untitled Session';
-          }
-
-          // Upsert to database so next time is faster
-          const sessionMode = dbSessionMap.has(sessionId)
-            ? extractSessionModeFromMetadata(dbSessionMap.get(sessionId).metadata)
-            : 'research';
-          const resolvedMessageCount = Math.max(indexedMessageCount, messageCount);
-
-          sessionDb.upsertSession(sessionId, projectName, 'gemini', finalName, stats.mtime.toISOString(), resolvedMessageCount, {
-            sessionMode,
-          });
-
-          sessions.push({
-            id: sessionId,
-            name: finalName,
-            createdAt: stats.birthtime.toISOString(),
-            lastActivity: stats.mtime.toISOString(),
-            messageCount: resolvedMessageCount,
-            mode: sessionMode,
-            projectPath: projectPath,
-            filePath,
-            __provider: 'gemini'
-          });
-        }
-      } catch (err) {}
+    if (indexRef && !indexRef.sessionsByProject) {
+      indexRef.sessionsByProject = await buildGeminiSessionsIndex();
     }
 
-    if (sessions.length > 0) {
-      console.log(`[Gemini] Found ${sessions.length} sessions for project ${projectPath}`);
+    const sessionsByProject = indexRef?.sessionsByProject || await buildGeminiSessionsIndex();
+    const sessions = [...(sessionsByProject.get(normalizedProjectPath) || [])];
+
+    if (normalizedLegacyProjectPath && normalizedLegacyProjectPath !== normalizedProjectPath) {
+      sessions.push(...(sessionsByProject.get(normalizedLegacyProjectPath) || []));
     }
-    const sortedSessions = sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
-    return limit > 0 ? sortedSessions.slice(0, limit) : sortedSessions;
+
+    const dedupedSessions = Array.from(new Map(sessions.map((session) => [session.id, session])).values())
+      .map((session) => ({
+        ...session,
+        projectPath,
+      }));
+
+    return limit > 0 ? dedupedSessions.slice(0, limit) : dedupedSessions;
   } catch (error) {
     console.error('Error fetching Gemini sessions:', error);
     return [];
   }
+}
+
+async function buildGeminiSessionsIndex() {
+  const { sessionDb } = await import('./database/db.js');
+  const geminiSessionsDir = path.join(os.homedir(), '.gemini', 'sessions');
+  const sessionsByProject = new Map();
+
+  try {
+    await fs.access(geminiSessionsDir);
+  } catch (error) {
+    return sessionsByProject;
+  }
+
+  const files = await fs.readdir(geminiSessionsDir);
+
+  for (const file of files) {
+    if (!file.endsWith('.jsonl')) {
+      continue;
+    }
+
+    const sessionId = path.basename(file, '.jsonl');
+    const filePath = path.join(geminiSessionsDir, file);
+
+    try {
+      const stats = await fs.stat(filePath);
+      const indexedSession = sessionDb.getSessionById(sessionId);
+      const indexedMessageCount = Number(indexedSession?.message_count ?? indexedSession?.messageCount ?? 0);
+      const matchedProjectPaths = new Set();
+
+      let explicitTitle = indexedSession?.display_name || null;
+      let firstMessageText = null;
+      let messageCount = 0;
+
+      const fileStream = fsSync.createReadStream(filePath);
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity,
+      });
+
+      let lineCount = 0;
+
+      for await (const line of rl) {
+        lineCount++;
+        if (lineCount > 2000) {
+          break;
+        }
+
+        if (!line.trim()) {
+          continue;
+        }
+
+        try {
+          const entry = JSON.parse(line);
+          const sessionCwd = entry.cwd || entry.payload?.cwd;
+          if (sessionCwd) {
+            const normalizedSessionCwd = await normalizeComparablePath(sessionCwd);
+            if (normalizedSessionCwd) {
+              matchedProjectPaths.add(normalizedSessionCwd);
+            }
+          }
+
+          const title = entry.summary || entry.title || entry.payload?.title || entry.payload?.summary;
+          if (
+            title &&
+            typeof title === 'string' &&
+            title.trim() &&
+            !title.includes('Gemini Session') &&
+            !title.includes('New Session')
+          ) {
+            explicitTitle = title.trim();
+          }
+
+          if (!firstMessageText && (entry.role === 'user' || (entry.type === 'message' && entry.role === 'user'))) {
+            const content = entry.content || entry.message?.content || entry.payload?.message?.content;
+            const textContent = typeof content === 'string'
+              ? content
+              : Array.isArray(content)
+                ? content.map((part) => part.text || (typeof part === 'string' ? part : '')).join(' ')
+                : '';
+
+            if (textContent.trim()) {
+              const cleaned = textContent.trim();
+              if (!cleaned.includes('Base directory for this skill:') && !cleaned.startsWith('<command-name>')) {
+                const helpMatch = cleaned.match(/Please help me with ["'](.*?)["']/);
+                firstMessageText = helpMatch ? helpMatch[1] : cleaned.split('\n')[0].replace(/#+\s*/, '').trim();
+              }
+            }
+          }
+
+          const isUserMessage = entry.role === 'user' || (entry.type === 'message' && entry.role === 'user');
+          const isAssistantMessage = entry.role === 'assistant'
+            || entry.message?.role === 'assistant'
+            || (entry.type === 'message' && entry.role === 'assistant');
+
+          if (isUserMessage || isAssistantMessage) {
+            messageCount++;
+          }
+        } catch (error) {}
+      }
+
+      if (matchedProjectPaths.size === 0) {
+        continue;
+      }
+
+      let finalName = explicitTitle || firstMessageText;
+      if (finalName) {
+        finalName = finalName.replace(/[\*\_\`]/g, '');
+        if (finalName.length > 50) {
+          finalName = `${finalName.substring(0, 47)}...`;
+        }
+      } else {
+        finalName = 'Untitled Session';
+      }
+
+      const sessionMode = extractSessionModeFromMetadata(indexedSession?.metadata);
+      const resolvedMessageCount = Math.max(indexedMessageCount, messageCount);
+      const session = {
+        id: sessionId,
+        name: finalName,
+        createdAt: stats.birthtime.toISOString(),
+        lastActivity: stats.mtime.toISOString(),
+        messageCount: resolvedMessageCount,
+        mode: sessionMode,
+        filePath,
+        __provider: 'gemini',
+      };
+
+      for (const normalizedProjectPath of matchedProjectPaths) {
+        if (!sessionsByProject.has(normalizedProjectPath)) {
+          sessionsByProject.set(normalizedProjectPath, []);
+        }
+        sessionsByProject.get(normalizedProjectPath).push(session);
+      }
+    } catch (error) {}
+  }
+
+  for (const sessions of sessionsByProject.values()) {
+    sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+  }
+
+  return sessionsByProject;
 }
 
 async function normalizeComparablePath(inputPath) {
@@ -2707,8 +3112,9 @@ async function getWorkspaceRootFromConfig() {
   const resolvedRoot = await resolveConfiguredWorkspacesRoot(config._workspacesRoot || null);
 
   if (resolvedRoot && config._workspacesRoot !== resolvedRoot) {
-    config._workspacesRoot = resolvedRoot;
-    await saveProjectConfig(config);
+    await mutateProjectConfig((nextConfig) => {
+      nextConfig._workspacesRoot = resolvedRoot;
+    });
   }
 
   return resolvedRoot || null;
@@ -2716,13 +3122,13 @@ async function getWorkspaceRootFromConfig() {
 
 // Save workspace root to project config
 async function setWorkspaceRootInConfig(workspacesRoot) {
-  const config = await loadProjectConfig();
-  if (workspacesRoot) {
-    config._workspacesRoot = workspacesRoot;
-  } else {
-    delete config._workspacesRoot;
-  }
-  await saveProjectConfig(config);
+  await mutateProjectConfig((config) => {
+    if (workspacesRoot) {
+      config._workspacesRoot = workspacesRoot;
+    } else {
+      delete config._workspacesRoot;
+    }
+  });
 }
 
 // Rename a session (Claude, Gemini, or Cursor)
@@ -2869,6 +3275,7 @@ async function renameSession(projectName, sessionId, newSummary, provider = 'cla
 
 export {
   getProjects,
+  getTrashedProjects,
   getSessions,
   getSessionMessages,
   parseJsonlSessions,
@@ -2877,6 +3284,8 @@ export {
   deleteSession,
   isProjectEmpty,
   deleteProject,
+  restoreProject,
+  deleteTrashedProject,
   addProjectManually,
   loadProjectConfig,
   saveProjectConfig,
