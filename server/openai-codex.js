@@ -253,6 +253,7 @@ export async function queryCodex(command, options = {}, ws) {
   const abortController = new AbortController();
 
   try {
+    // Synchronous (better-sqlite3) — no await needed.
     if (sessionId && workingDirectory) {
       applyStageTagsToSession({
         sessionId,

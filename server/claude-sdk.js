@@ -439,6 +439,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
   const sessionProjectPath = options.cwd || options.projectPath || null;
 
   try {
+    // Synchronous (better-sqlite3) — no await needed.
     if (sessionId && sessionProjectPath) {
       applyStageTagsToSession({
         sessionId,

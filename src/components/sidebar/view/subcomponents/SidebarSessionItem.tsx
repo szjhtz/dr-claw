@@ -76,10 +76,31 @@ export default function SidebarSessionItem({
   const modeBadgeLabel =
     sessionView.mode === 'workspace_qa' ? t('sessions.mode.workspaceQa') : t('sessions.mode.research');
   const stageTags = Array.isArray(session.tags)
-    ? session.tags.filter((tag) => tag?.tagType === 'stage' || tag?.tag_type === 'stage')
+    ? session.tags.filter((tag) => tag?.tagType === 'stage')
     : [];
   const visibleStageTags = stageTags.slice(0, 2);
   const hiddenStageCount = Math.max(0, stageTags.length - visibleStageTags.length);
+
+  const stageTagBadges = stageTags.length > 0 ? (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {visibleStageTags.map((tag) => (
+        <span
+          key={`${session.id}-${tag.id}`}
+          className={cn(
+            'inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium',
+            STAGE_TAG_TONE_BY_KEY[tag.tagKey || ''] || 'border-border/70 bg-background/70 text-foreground/75',
+          )}
+        >
+          {tag.label}
+        </span>
+      ))}
+      {hiddenStageCount > 0 ? (
+        <span className="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
+          +{hiddenStageCount}
+        </span>
+      ) : null}
+    </div>
+  ) : null;
 
   const metadataRowClassName = 'flex items-center gap-1 mt-0.5 min-w-0';
   const rightMetaClassName = 'ml-auto flex items-center gap-1.5 flex-shrink-0';
@@ -132,26 +153,7 @@ export default function SidebarSessionItem({
                   </span>
                 </div>
               </div>
-              {stageTags.length > 0 ? (
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {visibleStageTags.map((tag) => (
-                    <span
-                      key={`${session.id}-${tag.id}`}
-                      className={cn(
-                        'inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium',
-                        STAGE_TAG_TONE_BY_KEY[tag.tagKey || tag.tag_key || ''] || 'border-border/70 bg-background/70 text-foreground/75',
-                      )}
-                    >
-                      {tag.label}
-                    </span>
-                  ))}
-                  {hiddenStageCount > 0 ? (
-                    <span className="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
-                      +{hiddenStageCount}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
+              {stageTagBadges}
             </div>
 
             {!sessionView.isCursorSession && (
@@ -205,26 +207,7 @@ export default function SidebarSessionItem({
                   </span>
                 </div>
               </div>
-              {stageTags.length > 0 ? (
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {visibleStageTags.map((tag) => (
-                    <span
-                      key={`${session.id}-${tag.id}`}
-                      className={cn(
-                        'inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium',
-                        STAGE_TAG_TONE_BY_KEY[tag.tagKey || tag.tag_key || ''] || 'border-border/70 bg-background/70 text-foreground/75',
-                      )}
-                    >
-                      {tag.label}
-                    </span>
-                  ))}
-                  {hiddenStageCount > 0 ? (
-                    <span className="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
-                      +{hiddenStageCount}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
+              {stageTagBadges}
             </div>
           </div>
         </Button>

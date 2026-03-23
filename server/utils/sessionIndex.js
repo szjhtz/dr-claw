@@ -18,11 +18,6 @@ function normalizeStageTagKeys(stageTagKeys = []) {
   const normalized = Array.from(new Set(
     (Array.isArray(stageTagKeys) ? stageTagKeys : [])
       .map((value) => String(value || '').trim().toLowerCase())
-      .map((value) => {
-        if (value === 'presentation') return 'promotion';
-        if (value === 'research') return 'survey';
-        return value;
-      })
       .filter((value) => ['survey', 'ideation', 'experiment', 'publication', 'promotion'].includes(value))
   ));
 
@@ -87,6 +82,9 @@ export function recordIndexedSession({
     },
   );
 
+  // Dual-path tag application: tags are also applied at spawn start (in the CLI modules)
+  // for immediate tagging of existing sessions. This second call ensures tags are applied
+  // for newly created sessions. INSERT OR IGNORE in appendSessionTagsByKeys prevents duplicates.
   applyStageTagsToSession({
     sessionId,
     projectPath,

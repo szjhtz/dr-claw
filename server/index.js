@@ -733,6 +733,7 @@ app.get('/api/projects/:projectName/sessions/:sessionId/messages', authenticateT
 app.get('/api/projects/:projectName/tags', authenticateToken, async (req, res) => {
     try {
         const { projectName } = req.params;
+        // Lazy initialization: idempotent, uses INSERT OR IGNORE internally.
         tagDb.ensureDefaultStageTags(projectName);
         const { tagType } = req.query;
         const tags = tagDb.listProjectTags(projectName, tagType || null);
@@ -745,6 +746,7 @@ app.get('/api/projects/:projectName/tags', authenticateToken, async (req, res) =
 app.get('/api/projects/:projectName/sessions/:sessionId/tags', authenticateToken, async (req, res) => {
     try {
         const { projectName, sessionId } = req.params;
+        // Lazy initialization: idempotent, uses INSERT OR IGNORE internally.
         tagDb.ensureDefaultStageTags(projectName);
         const session = sessionDb.getSessionById(sessionId);
         if (!session || session.project_name !== projectName) {
@@ -767,6 +769,7 @@ app.put('/api/projects/:projectName/sessions/:sessionId/tags', authenticateToken
             return res.status(400).json({ error: 'tagIds array is required' });
         }
 
+        // Lazy initialization: idempotent, uses INSERT OR IGNORE internally.
         tagDb.ensureDefaultStageTags(projectName);
         const session = sessionDb.getSessionById(sessionId);
         if (!session || session.project_name !== projectName) {

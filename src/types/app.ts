@@ -4,25 +4,18 @@ export type SessionMode = 'research' | 'workspace_qa';
 
 export interface SessionTag {
   id: number;
-  project_name?: string;
-  tag_key?: string;
-  tag_type?: 'stage' | string;
-  label: string;
-  color?: string | null;
-  sort_order?: number;
-  metadata?: Record<string, unknown> | null;
-  source?: string | null;
-  linked_by?: string | null;
-  linked_at?: string | null;
-  link_metadata?: Record<string, unknown> | null;
-  created_at?: string;
+  projectName?: string;
   tagKey: string;
   tagType: 'stage' | string;
+  label: string;
+  color?: string | null;
   sortOrder?: number;
-  createdAt?: string;
+  metadata?: Record<string, unknown> | null;
+  source?: string | null;
   linkedBy?: string | null;
   linkedAt?: string | null;
   linkMetadata?: Record<string, unknown> | null;
+  createdAt?: string;
 }
 
 export interface PendingAutoIntake {

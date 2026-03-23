@@ -321,6 +321,8 @@ export function useProjectsState({
     }
   }, [activeTab, fetchTrashProjects]);
 
+  // TODO: Replace CustomEvent-based session-tags-updated with a shared state
+  // manager (e.g., Zustand store or React context) to avoid global event bus coupling.
   useEffect(() => {
     if (typeof window === 'undefined') {
       return undefined;

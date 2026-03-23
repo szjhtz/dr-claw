@@ -104,12 +104,19 @@ function normalizeTaskStatus(status) {
   return raw;
 }
 
+function normalizeTaskStage(stage) {
+  const raw = String(stage || '').trim().toLowerCase();
+  if (raw === 'presentation') return 'promotion';
+  if (raw === 'research') return 'survey';
+  return raw;
+}
+
 function normalizeTask(task) {
   return {
     id: task.id,
     title: task.title || 'Untitled Task',
     status: normalizeTaskStatus(task.status),
-    stage: typeof task.stage === 'string' ? task.stage : '',
+    stage: normalizeTaskStage(task.stage),
     nextActionPrompt: typeof task.nextActionPrompt === 'string' ? task.nextActionPrompt : '',
   };
 }

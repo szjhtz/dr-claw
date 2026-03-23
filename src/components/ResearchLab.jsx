@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -234,7 +234,7 @@ const SESSION_TAG_SOURCE_META = {
   task_context: { label: 'Task Context', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
   auto_research: { label: 'Auto Research', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
   chat_context: { label: 'Chat Context', className: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300' },
-  inferred: { label: 'Inferred', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+  inferred: { label: 'Inferred', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' }, // Reserved for future ML-based tag inference
   unknown: { label: 'Tagged', className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' },
 };
 const ARTIFACT_STAGE_ORDER = [
@@ -1300,7 +1300,7 @@ function TaskPipelineBoard({ tasks, isLoading, onNavigateToChat, projectName, on
 
 function getSessionStageTags(sessionTags = []) {
   return (Array.isArray(sessionTags) ? sessionTags : []).filter(
-    (tag) => tag?.tagType === 'stage' || tag?.tag_type === 'stage'
+    (tag) => tag?.tagType === 'stage'
   );
 }
 
@@ -1337,21 +1337,21 @@ function SessionStageBoard({
 }) {
   const stageTags = useMemo(() => {
     const tags = (Array.isArray(projectTags) ? projectTags : []).filter(
-      (tag) => tag?.tagType === 'stage' || tag?.tag_type === 'stage'
+      (tag) => tag?.tagType === 'stage'
     );
-    const byKey = new Map(tags.map((tag) => [tag.tagKey || tag.tag_key, tag]));
+    const byKey = new Map(tags.map((tag) => [tag.tagKey, tag]));
     return PIPELINE_STAGE_KEYS.map((stageKey) => byKey.get(stageKey)).filter(Boolean);
   }, [projectTags]);
 
   const stageCounts = useMemo(() => {
     const counts = {};
     stageTags.forEach((tag) => {
-      counts[tag.tagKey || tag.tag_key] = 0;
+      counts[tag.tagKey] = 0;
     });
 
     sessions.forEach((session) => {
       const sessionStageTags = getSessionStageTags(sessionTagsById[session.id] || session.tags);
-      const stageKeys = new Set(sessionStageTags.map((tag) => tag.tagKey || tag.tag_key).filter(Boolean));
+      const stageKeys = new Set(sessionStageTags.map((tag) => tag.tagKey).filter(Boolean));
       stageKeys.forEach((stageKey) => {
         if (Object.prototype.hasOwnProperty.call(counts, stageKey)) {
           counts[stageKey] += 1;
@@ -1397,7 +1397,7 @@ function SessionStageBoard({
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         {stageTags.map((tag) => {
-          const stageKey = tag.tagKey || tag.tag_key;
+          const stageKey = tag.tagKey;
           const meta = TASK_STAGE_META[stageKey] || TASK_STAGE_META.unassigned;
           return (
             <div key={tag.id} className="rounded-2xl border border-border/60 bg-background/70 px-3 py-3 shadow-sm">
@@ -1441,7 +1441,7 @@ function SessionStageBoard({
 
                 <div className="flex flex-wrap gap-2">
                   {stageTags.map((tag) => {
-                    const stageKey = tag.tagKey || tag.tag_key;
+                    const stageKey = tag.tagKey;
                     const meta = TASK_STAGE_META[stageKey] || TASK_STAGE_META.unassigned;
                     const isSelected = selectedStageTagIds.has(tag.id);
                     return (
@@ -1465,7 +1465,7 @@ function SessionStageBoard({
 
               <div className="mt-3 flex flex-wrap gap-2">
                 {selectedStageTags.length > 0 ? selectedStageTags.map((tag) => {
-                  const stageKey = tag.tagKey || tag.tag_key;
+                  const stageKey = tag.tagKey;
                   const stageMeta = TASK_STAGE_META[stageKey] || TASK_STAGE_META.unassigned;
                   const sourceMeta = getSessionTagSourceMeta(tag.source);
                   return (
@@ -2414,12 +2414,28 @@ function ResearchLab({ selectedProject, onNavigateToChat }) {
     selectedProject?.geminiSessions,
   ]);
 
+  const prevProjectIdentityRef = useRef(projectIdentity);
   useEffect(() => {
-    const nextSessionTags = {};
-    projectSessions.forEach((session) => {
-      nextSessionTags[session.id] = Array.isArray(session.tags) ? session.tags : [];
+    const isProjectSwitch = prevProjectIdentityRef.current !== projectIdentity;
+    prevProjectIdentityRef.current = projectIdentity;
+
+    setSessionTagsById((current) => {
+      if (isProjectSwitch) {
+        const next = {};
+        projectSessions.forEach((session) => {
+          next[session.id] = Array.isArray(session.tags) ? session.tags : [];
+        });
+        return next;
+      }
+      // Merge: preserve locally-managed tags (optimistic updates), add new sessions only
+      const next = { ...current };
+      projectSessions.forEach((session) => {
+        if (!Object.prototype.hasOwnProperty.call(next, session.id)) {
+          next[session.id] = Array.isArray(session.tags) ? session.tags : [];
+        }
+      });
+      return next;
     });
-    setSessionTagsById(nextSessionTags);
   }, [projectIdentity, projectSessions]);
 
   const loadData = useCallback(async () => {

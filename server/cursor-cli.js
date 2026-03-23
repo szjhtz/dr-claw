@@ -56,6 +56,7 @@ async function spawnCursor(command, options = {}, ws) {
     const workingDir = cwd || projectPath || process.cwd();
     const cursorCommand = resolveCursorCliCommand();
 
+    // Synchronous (better-sqlite3) — no await needed.
     if (sessionId && workingDir) {
       applyStageTagsToSession({
         sessionId,

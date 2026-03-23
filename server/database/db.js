@@ -599,15 +599,19 @@ function parseTagRow(row) {
   }
 
   return {
-    ...row,
-    metadata: row.metadata ? JSON.parse(row.metadata) : null,
-    linkMetadata: row.link_metadata ? JSON.parse(row.link_metadata) : null,
+    id: row.id,
+    projectName: row.project_name,
     tagKey: row.tag_key,
     tagType: row.tag_type,
+    label: row.label,
+    color: row.color ?? null,
     sortOrder: row.sort_order,
+    metadata: row.metadata ? JSON.parse(row.metadata) : null,
     createdAt: row.created_at,
-    linkedBy: row.linked_by,
-    linkedAt: row.linked_at,
+    source: row.source ?? null,
+    linkedBy: row.linked_by ?? null,
+    linkedAt: row.linked_at ?? null,
+    linkMetadata: row.link_metadata ? JSON.parse(row.link_metadata) : null,
   };
 }
 
@@ -713,8 +717,8 @@ function applyManualStageTagDecisions(existingMetadata, projectStageTags = [], s
   const decisions = getStageTagDecisions(metadataObject);
   const selectedStageKeys = new Set(
     (Array.isArray(selectedTags) ? selectedTags : [])
-      .filter((tag) => tag?.tagType === 'stage' || tag?.tag_type === 'stage')
-      .map((tag) => tag.tagKey || tag.tag_key)
+      .filter((tag) => tag?.tagType === 'stage')
+      .map((tag) => tag.tagKey)
       .filter(Boolean)
   );
   const timestamp = new Date().toISOString();
@@ -756,6 +760,7 @@ function hydrateSessionRowsWithTags(rows = []) {
     return rows.map(parseSessionRow).filter(Boolean);
   }
 
+  // SQLite default SQLITE_MAX_VARIABLE_NUMBER is 999; use 900 to leave headroom.
   const chunkSize = 900;
   const tagsBySessionId = new Map();
 
@@ -1021,7 +1026,8 @@ const sessionDb = {
         return [];
       }
 
-      const chunkSize = 900;
+      // SQLite default SQLITE_MAX_VARIABLE_NUMBER is 999; use 900 to leave headroom.
+  const chunkSize = 900;
       const allRows = [];
 
       for (let index = 0; index < projectNames.length; index += chunkSize) {

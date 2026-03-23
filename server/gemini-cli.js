@@ -495,6 +495,7 @@ export async function spawnGemini(command, options = {}, ws) {
     
     const workingDir = cwd || projectPath || process.cwd();
 
+    // Synchronous (better-sqlite3) — no await needed.
     if (sessionId && workingDir) {
       applyStageTagsToSession({
         sessionId,
