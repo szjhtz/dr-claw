@@ -1,6 +1,6 @@
 ---
 name: inno-figure-gen
-description: Generate/edit images with Gemini image models (default: gemini-3.1-flash-image-preview). Use for image create/modify requests incl. edits. Supports text-to-image + image-to-image; 1K/2K/4K; use --input-image. Use --model to select a different model.
+description: "Generate/edit images with Gemini image models (default: gemini-3.1-flash-image-preview). Use for image create/modify requests incl. edits. Supports text-to-image + image-to-image; 1K/2K/4K; use --input-image. Use --model to select a different model."
 ---
 
 # Gemini Image Generation & Editing
