@@ -342,13 +342,13 @@ async function checkClaudeCredentials() {
       checkClaudeCredentialsFile({ cliAvailable: true, cliCommand: resolvedCliCommand }).then(resolve);
     });
 
-    childProcess.on('error', (error) => {
+    childProcess.on('error', () => {
       if (processCompleted) return;
       processCompleted = true;
       clearTimeout(timeout);
-      const commandMissing = error?.code === 'ENOENT';
-      // claude CLI not available, fall back to credentials file
-      checkClaudeCredentialsFile({ cliAvailable: !commandMissing, cliCommand: resolvedCliCommand }).then(resolve);
+      // Command was already validated by resolveAvailableCliCommand, so treat
+      // any spawn error as a transient failure rather than "CLI missing".
+      checkClaudeCredentialsFile({ cliAvailable: true, cliCommand: resolvedCliCommand }).then(resolve);
     });
   });
 }

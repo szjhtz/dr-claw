@@ -11,12 +11,24 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+let cachedClaudeCmd = null;
+let cacheExpiry = 0;
+const CACHE_TTL_MS = 30_000;
+
 async function resolveClaudeCommand() {
-  return await resolveAvailableCliCommand({
+  if (cachedClaudeCmd && Date.now() < cacheExpiry) {
+    return cachedClaudeCmd;
+  }
+  const resolved = await resolveAvailableCliCommand({
     envVarName: 'CLAUDE_CLI_PATH',
     defaultCommands: ['claude'],
     appendWindowsSuffixes: true
-  }) || 'claude';
+  });
+  if (resolved) {
+    cachedClaudeCmd = resolved;
+    cacheExpiry = Date.now() + CACHE_TTL_MS;
+  }
+  return resolved;
 }
 
 function getSpawnOptions(options = {}) {
@@ -32,8 +44,11 @@ function getSpawnOptions(options = {}) {
 router.get('/cli/list', async (req, res) => {
   try {
     console.log('📋 Listing MCP servers using Claude CLI');
-    
+
     const claudeCmd = await resolveClaudeCommand();
+    if (!claudeCmd) {
+      return res.status(503).json({ error: 'Claude CLI not installed', details: 'Could not find claude command in PATH' });
+    }
 
     const process = spawn(claudeCmd, ['mcp', 'list'], getSpawnOptions({
       stdio: ['pipe', 'pipe', 'pipe']
@@ -82,6 +97,9 @@ router.post('/cli/add', async (req, res) => {
     console.log(`➕ Adding MCP server using Claude CLI (${scope} scope):`, name);
     
     const claudeCmd = await resolveClaudeCommand();
+    if (!claudeCmd) {
+      return res.status(503).json({ error: 'Claude CLI not installed', details: 'Could not find claude command in PATH' });
+    }
 
     let cliArgs = ['mcp', 'add'];
     
@@ -203,6 +221,9 @@ router.post('/cli/add-json', async (req, res) => {
     }
     
     const claudeCmd = await resolveClaudeCommand();
+    if (!claudeCmd) {
+      return res.status(503).json({ error: 'Claude CLI not installed', details: 'Could not find claude command in PATH' });
+    }
 
     // Build the command: claude mcp add-json --scope <scope> <name> '<json>'
     const cliArgs = ['mcp', 'add-json', '--scope', scope, name];
@@ -280,6 +301,9 @@ router.delete('/cli/remove/:name', async (req, res) => {
     console.log('🗑️ Removing MCP server using Claude CLI:', actualName, 'scope:', actualScope);
     
     const claudeCmd = await resolveClaudeCommand();
+    if (!claudeCmd) {
+      return res.status(503).json({ error: 'Claude CLI not installed', details: 'Could not find claude command in PATH' });
+    }
 
     // Build command args based on scope
     let cliArgs = ['mcp', 'remove'];
@@ -343,6 +367,9 @@ router.get('/cli/get/:name', async (req, res) => {
     console.log('📄 Getting MCP server details using Claude CLI:', name);
     
     const claudeCmd = await resolveClaudeCommand();
+    if (!claudeCmd) {
+      return res.status(503).json({ error: 'Claude CLI not installed', details: 'Could not find claude command in PATH' });
+    }
 
     const process = spawn(claudeCmd, ['mcp', 'get', name], getSpawnOptions({
       stdio: ['pipe', 'pipe', 'pipe']
