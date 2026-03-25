@@ -179,7 +179,7 @@ Skills from `dr-claw/skills/` are automatically symlinked into each project's `.
 ```
 
 <p align="center">
-  <img src="public/screenshots/terminal_example.png" alt="Terminal workflow example" width="1000">
+  <img src="public/screenshots/terminal_example.png" alt="Terminal workflow example" width="600">
 </p>
 
 #### Option B: Frontend UI
