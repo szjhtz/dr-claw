@@ -17,6 +17,7 @@ import { Codex } from '@openai/codex-sdk';
 import { encodeProjectPath, reconcileCodexSessionIndex } from './projects.js';
 import { sessionDb } from './database/db.js';
 import { applyStageTagsToSession, recordIndexedSession } from './utils/sessionIndex.js';
+import { classifyError, classifySDKError } from '../shared/errorClassifier.js';
 
 // Track active sessions
 const activeCodexSessions = new Map();
@@ -423,11 +424,30 @@ export async function queryCodex(command, options = {}, ws) {
         transformed.startTime = activeSession.startTime;
       }
 
+      // For error/turn.failed events, send codex-error instead of codex-response
+      // to trigger the error UI with retry button (avoid sending both).
+      if (event.type === 'error' || event.type === 'turn.failed') {
+        const errorCode = event.error?.code || event.error?.type || '';
+        const errorMsg = event.error?.message || event.message || String(event.error || '');
+        const { errorType, isRetryable } = errorCode
+          ? classifySDKError(errorCode, 'codex')
+          : classifyError(errorMsg);
+        sendMessage(ws, {
+          type: 'codex-error',
+          error: errorMsg || errorCode,
+          errorType,
+          isRetryable,
+          sessionId: currentSessionId,
+        });
+        continue;
+      }
+
       sendMessage(ws, {
         type: 'codex-response',
         data: transformed,
         sessionId: currentSessionId
       });
+
       // Extract and send token usage if available (normalized to match Claude format)
       if (event.type === 'turn.completed' && event.usage) {
         const totalTokens = (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0);
@@ -476,9 +496,13 @@ export async function queryCodex(command, options = {}, ws) {
 
     if (!wasAborted) {
       console.error('[Codex] Error:', error);
+      const { errorType, isRetryable } = classifyError(error.message);
+
       sendMessage(ws, {
         type: 'codex-error',
         error: error.message,
+        errorType,
+        isRetryable,
         sessionId: currentSessionId
       });
     }

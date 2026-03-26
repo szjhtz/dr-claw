@@ -13,6 +13,10 @@
     "codex": "Codex",
     "gemini": "Gemini"
   },
+  "error": {
+    "retry": "Retry",
+    "usageLimitHint": "You can retry when your usage limit resets"
+  },
   "tools": {
     "settings": "Tool Settings",
     "error": "Tool Error",

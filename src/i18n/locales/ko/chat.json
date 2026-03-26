@@ -13,6 +13,10 @@
     "codex": "Codex",
     "gemini": "Gemini"
   },
+  "error": {
+    "retry": "재시도",
+    "usageLimitHint": "사용량 제한이 재설정되면 재시도할 수 있습니다"
+  },
   "tools": {
     "settings": "도구 설정",
     "error": "도구 오류",

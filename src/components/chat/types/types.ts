@@ -74,6 +74,8 @@ export interface ChatMessage {
     isComplete: boolean;
   };
   attachedPrompt?: AttachedPrompt;
+  errorType?: 'usage_limit' | 'overloaded' | 'network' | 'auth' | 'unknown';
+  isRetryable?: boolean;
   [key: string]: unknown;
 }
 

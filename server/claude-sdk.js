@@ -18,6 +18,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { CLAUDE_MODELS } from '../shared/modelConstants.js';
+import { classifyError, classifySDKError } from '../shared/errorClassifier.js';
 import { encodeProjectPath, ensureProjectSkillLinks, reconcileClaudeSessionIndex } from './projects.js';
 import { writeProjectTemplates } from './templates/index.js';
 import { applyStageTagsToSession, recordIndexedSession } from './utils/sessionIndex.js';
@@ -610,6 +611,19 @@ async function queryClaudeSDK(command, options = {}, ws) {
         lastAssistantUsage = message.message.usage;
       }
 
+      // Detect SDK-level errors on assistant messages (e.g. rate_limit, authentication_failed)
+      // These come as structured enum values, not in the catch block.
+      if (message.type === 'assistant' && message.error) {
+        const { errorType, isRetryable } = classifySDKError(message.error, 'claude');
+        ws.send({
+          type: 'claude-error',
+          error: message.error,
+          errorType,
+          isRetryable,
+          sessionId: capturedSessionId || sessionId || null,
+        });
+      }
+
       // Transform and send message to WebSocket
       const transformedMessage = transformMessage(message);
       const sessionData = capturedSessionId ? getSession(capturedSessionId) : null;
@@ -667,15 +681,35 @@ async function queryClaudeSDK(command, options = {}, ws) {
   } catch (error) {
     console.error('SDK query error:', error);
 
+    // Record session before cleanup so it appears in sidebar even on early errors
+    if (capturedSessionId && !sessionId && !sessionCreatedSent && (options.cwd || options.projectPath)) {
+      sessionCreatedSent = true;
+      recordIndexedSession({
+        sessionId: capturedSessionId,
+        provider: 'claude',
+        projectPath: options.cwd || options.projectPath,
+        sessionMode: sessionMode || 'research',
+      });
+      ws.send({
+        type: 'session-created',
+        sessionId: capturedSessionId,
+        provider: 'claude',
+        mode: sessionMode || 'research',
+      });
+    }
+
     // Clean up session on error
     if (capturedSessionId) {
       removeSession(capturedSessionId);
     }
 
-    // Send error to WebSocket
+    const { errorType, isRetryable } = classifyError(error.message);
+
     ws.send({
       type: 'claude-error',
       error: error.message,
+      errorType,
+      isRetryable,
       sessionId: capturedSessionId || sessionId || null
     });
 

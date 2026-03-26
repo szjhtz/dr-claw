@@ -21,6 +21,7 @@ import { Button } from '../../ui/button';
 import type { PendingAutoIntake } from '../../../types/app';
 import { CLAUDE_MODELS, CURSOR_MODELS, CODEX_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
 
+
 const DEFAULT_PROVIDER_AVAILABILITY: Record<Provider, ProviderAvailability> = {
   claude: { cliAvailable: true, cliCommand: 'claude', installHint: null },
   cursor: { cliAvailable: true, cliCommand: 'agent', installHint: null },
@@ -286,6 +287,19 @@ function ChatInterface({
     onReplaceTemporarySession,
     onNavigateToSession,
   });
+
+  const chatMessagesRef = useRef(chatMessages);
+  chatMessagesRef.current = chatMessages;
+
+  const handleRetry = useCallback(() => {
+    const msgs = chatMessagesRef.current;
+    let lastUserMessage: (typeof msgs)[number] | undefined;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].type === 'user') { lastUserMessage = msgs[i]; break; }
+    }
+    if (!lastUserMessage?.content) return;
+    submitProgrammaticInput(lastUserMessage.content);
+  }, [submitProgrammaticInput]);
 
   const autoIntakeTriggeredRef = useRef(false);
   const lastAutoIntakeTriggerIdRef = useRef<string | null>(null);
@@ -747,6 +761,7 @@ function ChatInterface({
           providerAvailability={providerAvailability}
           newSessionMode={newSessionMode}
           onNewSessionModeChange={onNewSessionModeChange}
+          onRetry={handleRetry}
         />
 
         <div className="px-2 sm:px-4 max-w-5xl mx-auto w-full">
