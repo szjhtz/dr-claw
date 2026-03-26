@@ -117,6 +117,7 @@ export function useChatSessionState({
       startTime: persistedInitialStartTime,
     };
   });
+  const [statusTextOverride, setStatusTextOverride] = useState<string | null>(null);
   const [allMessagesLoaded, setAllMessagesLoaded] = useState(false);
   const [isLoadingAllMessages, setIsLoadingAllMessages] = useState(false);
   const [loadAllJustFinished, setLoadAllJustFinished] = useState(false);
@@ -848,6 +849,8 @@ export function useChatSessionState({
     showLoadAllOverlay,
     claudeStatus,
     setClaudeStatus,
+    statusTextOverride,
+    setStatusTextOverride,
     createDiff,
     scrollContainerRef,
     scrollToBottom,

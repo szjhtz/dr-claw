@@ -14,6 +14,7 @@ import {
   safeLocalStorage,
 } from '../utils/chatStorage';
 import { RESUMING_STATUS_TEXT } from '../types/types';
+import i18n from '../../../i18n/config';
 import type { ChatMessage, PendingPermissionRequest } from '../types/types';
 import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
 
@@ -49,6 +50,7 @@ interface UseChatRealtimeHandlersArgs {
   setIsLoading: (loading: boolean) => void;
   setCanAbortSession: (canAbort: boolean) => void;
   setClaudeStatus: Dispatch<SetStateAction<{ text: string; tokens: number; can_interrupt: boolean; startTime?: number } | null>>;
+  setStatusTextOverride: Dispatch<SetStateAction<string | null>>;
   setTokenBudget: (budget: Record<string, unknown> | null) => void;
   setIsSystemSessionChange: (isSystemSessionChange: boolean) => void;
   setPendingPermissionRequests: Dispatch<SetStateAction<PendingPermissionRequest[]>>;
@@ -139,6 +141,7 @@ export function useChatRealtimeHandlers({
   setIsLoading,
   setCanAbortSession,
   setClaudeStatus,
+  setStatusTextOverride,
   setTokenBudget,
   setIsSystemSessionChange,
   setPendingPermissionRequests,
@@ -156,6 +159,10 @@ export function useChatRealtimeHandlers({
 
   // Helper: Handle structured assistant content
   const handleStructuredAssistantMessage = (structuredData: any, rawData: any) => {
+    // New assistant message = previous tool execution done; clear override.
+    // If this message contains a new Bash tool_use, it will be re-set below (React batches both updates).
+    setStatusTextOverride(null);
+
     const parentToolUseId = rawData?.parentToolUseId;
     const newMessages: any[] = [];
     const childToolUpdates: { parentId: string; child: any }[] = [];
@@ -177,7 +184,8 @@ export function useChatRealtimeHandlers({
 
       if (part.type === 'tool_use') {
         if (['Bash', 'run_shell_command'].includes(part.name)) {
-          setClaudeStatus((prev) => prev ? { ...prev, text: 'Running code' } : prev);
+          // Set running code status when command starts
+          setStatusTextOverride(i18n.t('chat:status.runningCode'));
         }
         const toolInput = part.input ? JSON.stringify(part.input, null, 2) : '';
 
@@ -288,6 +296,9 @@ export function useChatRealtimeHandlers({
     }
 
     if (toolResults.length > 0) {
+      // Reset "running code" status when tool results arrive (tool execution finished)
+      setStatusTextOverride(null);
+
       setChatMessages((previous) =>
         previous.map((message) => {
           for (const part of toolResults) {
@@ -459,6 +470,7 @@ export function useChatRealtimeHandlers({
       setIsLoading(false);
       setCanAbortSession(false);
       setClaudeStatus(null);
+      setStatusTextOverride(null);
     };
 
     const flushAndFinalizePendingStream = () => {
@@ -555,6 +567,7 @@ export function useChatRealtimeHandlers({
           }
           if (messageData.type === 'content_block_delta' && messageData.delta?.text) {
             setIsLoading(true);
+            setStatusTextOverride(null);
             const decodedText = decodeHtmlEntities(messageData.delta.text);
             streamBufferRef.current += decodedText;
             if (!streamTimerRef.current) {
@@ -609,6 +622,7 @@ export function useChatRealtimeHandlers({
           }
           if (messageData.type === 'content_block_delta' && messageData.delta?.text) {
             setIsLoading(true);
+            setStatusTextOverride(null);
             const decodedText = decodeHtmlEntities(messageData.delta.text);
             streamBufferRef.current += decodedText;
             if (!streamTimerRef.current) {
@@ -898,7 +912,11 @@ export function useChatRealtimeHandlers({
               break;
 
             case 'command_execution':
-              setClaudeStatus((prev) => prev ? { ...prev, text: 'Running code' } : prev);
+              if (lifecycle !== 'completed') {
+                setStatusTextOverride(i18n.t('chat:status.runningCode'));
+              } else {
+                setStatusTextOverride(null);
+              }
               if (codexData.command) {
                 const exitCode = codexData.exitCode;
                 const output = codexData.output;
@@ -1275,7 +1293,7 @@ export function useChatRealtimeHandlers({
     }
   }, [
     latestMessage, provider, selectedProject, selectedSession, currentSessionId, setCurrentSessionId,
-    setChatMessages, setIsLoading, setCanAbortSession, setClaudeStatus, setTokenBudget,
+    setChatMessages, setIsLoading, setCanAbortSession, setClaudeStatus, setStatusTextOverride, setTokenBudget,
     setIsSystemSessionChange, setPendingPermissionRequests, onSessionInactive, onSessionProcessing,
     onSessionNotProcessing, onSessionStatusResolved, onReplaceTemporarySession, onNavigateToSession,
   ]);
