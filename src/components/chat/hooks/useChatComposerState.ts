@@ -11,6 +11,7 @@ import type {
 } from 'react';
 import { useDropzone } from 'react-dropzone';
 import type { FileRejection } from 'react-dropzone';
+import { useTranslation } from 'react-i18next';
 import { authenticatedFetch } from '../../../utils/api';
 import { isTelemetryEnabled } from '../../../utils/telemetry';
 
@@ -211,6 +212,7 @@ export function useChatComposerState({
   setPendingPermissionRequests,
   newSessionMode = 'research',
 }: UseChatComposerStateArgs) {
+  const { t } = useTranslation('chat');
   const [input, setInput] = useState(() => {
     if (typeof window !== 'undefined' && selectedProject) {
       return safeLocalStorage.getItem(`draft_input_${selectedProject.name}`) || '';
@@ -749,7 +751,11 @@ export function useChatComposerState({
         }
       }
 
-      const normalizedInput = currentInput.trim() || 'Please inspect the attached files and help me with them.';
+      const normalizedInput =
+        currentInput.trim() ||
+        t('input.attachmentOnlyFallback', {
+          defaultValue: 'Please inspect the attached files and help me with them.',
+        });
       let messageContent = normalizedInput;
       const selectedThinkingMode = thinkingModes.find((mode: { id: string; prefix?: string }) => mode.id === thinkingMode);
       if (selectedThinkingMode && selectedThinkingMode.prefix) {
@@ -1072,6 +1078,7 @@ export function useChatComposerState({
       setIsUserScrolledUp,
       slashCommands,
       thinkingMode,
+      t,
       intakeGreeting,
       uploadFilesToProject,
       uploadPreviewImages,

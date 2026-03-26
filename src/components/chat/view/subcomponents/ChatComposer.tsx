@@ -234,7 +234,6 @@ export default function ChatComposer({
                   file={file}
                   onRemove={() => onRemoveFile(index)}
                   uploadProgress={uploadingFiles.get(getFileKey(file))}
-                  error={fileErrors.get(getFileKey(file))}
                 />
               ))}
             </div>
