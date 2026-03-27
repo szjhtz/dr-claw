@@ -164,4 +164,51 @@ test.describe('Release Update Notification', () => {
     expect(typeof reminder?.remindAt).toBe('number');
     expect(reminder.remindAt).toBeGreaterThan(Date.now());
   });
+
+  test('treats closing from the backdrop as a snooze across refresh', async ({ page }) => {
+    await openAppWithRelease(page, '1.0.1');
+
+    const modal = getVersionModal(page);
+    await expect(modal).toBeVisible({ timeout: 15000 });
+
+    await page.getByLabel(/close modal|关闭弹窗|모달 닫기/i).click();
+    await expect(modal).toBeHidden({ timeout: 10000 });
+
+    const reminder = await page.evaluate((storageKey) => {
+      const rawValue = window.localStorage.getItem(storageKey);
+      return rawValue ? JSON.parse(rawValue) : null;
+    }, REMINDER_STORAGE_KEY);
+
+    expect(reminder?.version).toBe('1.0.1');
+    expect(typeof reminder?.remindAt).toBe('number');
+    expect(reminder.remindAt).toBeGreaterThan(Date.now());
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForResponse(RELEASE_API_URL);
+    await expect(getVersionModal(page)).toBeHidden();
+  });
+
+  test('shows the modal again after an existing reminder expires', async ({ page }) => {
+    await page.addInitScript((storageKey) => {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          version: '1.0.1',
+          remindAt: Date.now() - 1_000,
+        }),
+      );
+    }, REMINDER_STORAGE_KEY);
+
+    await openAppWithRelease(page, '1.0.1');
+
+    const modal = getVersionModal(page);
+    await expect(modal).toBeVisible({ timeout: 15000 });
+
+    const reminder = await page.evaluate((storageKey) => {
+      const rawValue = window.localStorage.getItem(storageKey);
+      return rawValue ? JSON.parse(rawValue) : null;
+    }, REMINDER_STORAGE_KEY);
+
+    expect(reminder).toBeNull();
+  });
 });

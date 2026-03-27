@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDeviceSettings } from '../../../hooks/useDeviceSettings';
 import { useVersionCheck } from '../../../hooks/useVersionCheck';
@@ -46,7 +46,6 @@ function Sidebar({
   newSessionMode,
 }: SidebarProps) {
   const versionReminderStorageKey = 'dr-claw.versionReminder';
-  const versionReminderDelayMs = 24 * 60 * 60 * 1000;
   const { t } = useTranslation(['sidebar', 'common']);
   const { isPWA } = useDeviceSettings({ trackMobile: false });
   const { updateAvailable, latestVersion, currentVersion, releaseInfo, installMode } = useVersionCheck(
@@ -59,27 +58,6 @@ function Sidebar({
   const { tasksEnabled } = useTasksSettings();
   const { logout } = useAuth();
   const [lastAutoPromptedVersion, setLastAutoPromptedVersion] = useState<string | null>(null);
-
-  const readVersionReminder = useCallback((): { version: string; remindAt: number } | null => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-
-    const rawValue = window.localStorage.getItem(versionReminderStorageKey);
-    if (!rawValue) {
-      return null;
-    }
-
-    try {
-      const parsed = JSON.parse(rawValue) as { version?: string; remindAt?: number };
-      if (!parsed.version || typeof parsed.remindAt !== 'number') {
-        return null;
-      }
-      return { version: parsed.version, remindAt: parsed.remindAt };
-    } catch {
-      return null;
-    }
-  }, []);
 
   const {
     isSidebarCollapsed,
@@ -148,18 +126,12 @@ function Sidebar({
       return;
     }
 
-    const reminder = readVersionReminder();
+    const reminder = readVersionReminder(versionReminderStorageKey);
     const isSameVersionSnoozed =
       reminder?.version === latestVersion && reminder.remindAt > Date.now();
 
     if (isSameVersionSnoozed) {
-      const timeoutId = window.setTimeout(() => {
-        window.localStorage.removeItem(versionReminderStorageKey);
-        setShowVersionModal(true);
-        setLastAutoPromptedVersion(latestVersion);
-      }, reminder.remindAt - Date.now());
-
-      return () => window.clearTimeout(timeoutId);
+      return;
     }
 
     if (lastAutoPromptedVersion === latestVersion) {
@@ -172,20 +144,20 @@ function Sidebar({
 
     setShowVersionModal(true);
     setLastAutoPromptedVersion(latestVersion);
-  }, [lastAutoPromptedVersion, latestVersion, readVersionReminder, setShowVersionModal, updateAvailable]);
+  }, [lastAutoPromptedVersion, latestVersion, setShowVersionModal, updateAvailable]);
 
-  const dismissVersionReminder = useCallback(() => {
+  const dismissVersionReminder = () => {
     if (typeof window !== 'undefined' && latestVersion) {
       window.localStorage.setItem(
         versionReminderStorageKey,
         JSON.stringify({
           version: latestVersion,
-          remindAt: Date.now() + versionReminderDelayMs,
+          remindAt: Date.now() + VERSION_REMINDER_DELAY_MS,
         }),
       );
     }
     setShowVersionModal(false);
-  }, [latestVersion, setShowVersionModal]);
+  };
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -336,6 +308,29 @@ function Sidebar({
 
     </>
   );
+}
+
+const VERSION_REMINDER_DELAY_MS = 24 * 60 * 60 * 1000;
+
+function readVersionReminder(storageKey: string): { version: string; remindAt: number } | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const rawValue = window.localStorage.getItem(storageKey);
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as { version?: string; remindAt?: number };
+    if (!parsed.version || typeof parsed.remindAt !== 'number') {
+      return null;
+    }
+    return { version: parsed.version, remindAt: parsed.remindAt };
+  } catch {
+    return null;
+  }
 }
 
 export default Sidebar;
