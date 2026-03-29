@@ -95,6 +95,10 @@
   "usageLimit": {
     "resetAt": "Claude 使用限制已达到。您的限制将在 **{{time}} {{timezone}}** - {{date}} 重置"
   },
+  "tokenUsage": {
+    "unavailable": "上下文 N/A",
+    "unavailableTitle": "当前无法获取此会话的上下文占用情况。"
+  },
   "codex": {
     "permissionMode": "权限模式",
     "modes": {

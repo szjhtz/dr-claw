@@ -21,6 +21,7 @@ import { sessionDb } from './database/db.js';
 import { applyStageTagsToSession, recordIndexedSession } from './utils/sessionIndex.js';
 import { classifyError, classifySDKError } from '../shared/errorClassifier.js';
 import { buildTempAttachmentFilename } from './utils/imageAttachmentFiles.js';
+import { buildCodexRealtimeTokenBudget } from './utils/sessionTokenUsage.js';
 
 // Track active sessions
 const activeCodexSessions = new Map();
@@ -523,13 +524,9 @@ export async function queryCodex(command, options = {}, ws) {
 
       // Extract and send token usage if available (normalized to match Claude format)
       if (event.type === 'turn.completed' && event.usage) {
-        const totalTokens = (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0);
         sendMessage(ws, {
           type: 'token-budget',
-          data: {
-            used: totalTokens,
-            total: 200000 // Default context window for Codex models
-          },
+          data: buildCodexRealtimeTokenBudget(event.usage),
           sessionId: currentSessionId
         });
       }

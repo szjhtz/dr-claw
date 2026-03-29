@@ -95,6 +95,10 @@
   "usageLimit": {
     "resetAt": "Claude usage limit reached. Your limit will reset at **{{time}} {{timezone}}** - {{date}}"
   },
+  "tokenUsage": {
+    "unavailable": "Ctx N/A",
+    "unavailableTitle": "Current context usage is unavailable for this session."
+  },
   "codex": {
     "permissionMode": "Permission Mode",
     "modes": {
