@@ -247,6 +247,39 @@ describe('deriveSessionContextSummary', () => {
     expect(contextPaths).not.toContain('3.0/GPT-5.3.');
     expect(contextPaths).not.toContain('3.0/GPT-5.3');
   });
+
+  it('does not turn slash-delimited prose into shell directories', () => {
+    const messages = [
+      {
+        type: 'assistant',
+        timestamp: '2026-03-31T12:10:00.000Z',
+        isToolUse: true,
+        toolName: 'Bash',
+        toolInput: JSON.stringify({
+          command: 'python analyze.py cost/latency GeneAgent/BioAgents/GeneGPT HealthBench/MedAgentBench ./Survey/reports',
+          workdir: projectRoot,
+        }),
+        toolResult: {
+          content: 'Compared GPT-5.3. with cost/latency tradeoffs.',
+          isError: false,
+        },
+      },
+    ] as any;
+
+    const summary = deriveSessionContextSummary(messages, projectRoot);
+    const directoryLabels = summary.directories.map((item) => item.label);
+    const contextPaths = summary.contextFiles.map((item) => item.relativePath);
+
+    expect(directoryLabels).toContain('Survey/reports');
+    expect(directoryLabels).not.toContain('cost/latency');
+    expect(directoryLabels).not.toContain('GeneAgent/BioAgents/GeneGPT');
+    expect(directoryLabels).not.toContain('HealthBench/MedAgentBench');
+    expect(contextPaths).not.toContain('cost/latency');
+    expect(contextPaths).not.toContain('GeneAgent/BioAgents/GeneGPT');
+    expect(contextPaths).not.toContain('HealthBench/MedAgentBench');
+    expect(contextPaths).not.toContain('GPT-5.3.');
+    expect(contextPaths).not.toContain('GPT-5.3');
+  });
 });
 
 describe('mergeDistinctChatMessages', () => {

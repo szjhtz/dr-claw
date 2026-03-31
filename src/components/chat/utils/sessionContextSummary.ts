@@ -376,6 +376,9 @@ const isLikelyDirectoryPath = (value: string) => {
   return !basename.includes('.') && !KNOWN_FILE_BASENAMES.has(basename);
 };
 
+const isExplicitPathReference = (value: string) =>
+  value.startsWith('/') || value.startsWith('./') || value.startsWith('../');
+
 const looksLikePathToken = (value: string) => {
   const normalized = trimTrailingPathPunctuation(value);
   if (!normalized || normalized.startsWith('-') || normalized.includes('://') || SHELL_COMMAND_BREAKS.has(normalized)) {
@@ -403,13 +406,45 @@ const looksLikePathToken = (value: string) => {
   return false;
 };
 
+const shouldTrackDirectoryCandidate = (value: string, source: 'shell' | 'text') => {
+  const normalized = trimTrailingPathPunctuation(value);
+  if (!normalized || !isLikelyDirectoryPath(normalized)) {
+    return false;
+  }
+
+  if (isExplicitPathReference(normalized)) {
+    return true;
+  }
+
+  return false;
+};
+
+const shouldTrackTextPathCandidate = (value: string) => {
+  const normalized = trimTrailingPathPunctuation(value);
+  if (!normalized || normalized.includes('://')) {
+    return false;
+  }
+
+  if (isExplicitPathReference(normalized)) {
+    return true;
+  }
+
+  const basename = normalized.split('/').pop() || normalized;
+  if (KNOWN_FILE_BASENAMES.has(basename)) {
+    return true;
+  }
+
+  const extension = basename.includes('.') ? basename.split('.').pop()?.toLowerCase() || '' : '';
+  return Boolean(extension) && KNOWN_FILE_EXTENSIONS.has(extension);
+};
+
 const extractPathsFromText = (value: string): string[] => {
   if (!value) return [];
 
   const candidates = new Set<string>();
   const pushMatch = (matchValue: string) => {
     const normalized = trimTrailingPathPunctuation(matchValue);
-    if (!normalized || normalized.includes('://')) return;
+    if (!shouldTrackTextPathCandidate(normalized)) return;
     candidates.add(normalized);
   };
 
@@ -461,19 +496,29 @@ const extractShellContext = (
         const colonPath = token.includes(':') ? token.slice(token.indexOf(':') + 1) : '';
         if (colonPath && looksLikePathToken(colonPath)) {
           const normalized = trimTrailingPathPunctuation(colonPath);
-          if (isLikelyDirectoryPath(normalized)) directories.add(normalized);
-          else files.add(normalized);
+          if (isLikelyDirectoryPath(normalized)) {
+            if (shouldTrackDirectoryCandidate(normalized, 'shell')) {
+              directories.add(normalized);
+            }
+          } else {
+            files.add(normalized);
+          }
         }
         return;
       }
 
       const normalized = trimTrailingPathPunctuation(token);
-      if (isLikelyDirectoryPath(normalized)) directories.add(normalized);
-      else files.add(normalized);
+      if (isLikelyDirectoryPath(normalized)) {
+        if (shouldTrackDirectoryCandidate(normalized, 'shell')) {
+          directories.add(normalized);
+        }
+      } else {
+        files.add(normalized);
+      }
     });
 
   extractPathsFromText(String(toolResult?.content || '')).forEach((nextPath) => {
-    if (isLikelyDirectoryPath(nextPath)) {
+    if (shouldTrackDirectoryCandidate(nextPath, 'text')) {
       directories.add(nextPath);
     } else {
       files.add(nextPath);
