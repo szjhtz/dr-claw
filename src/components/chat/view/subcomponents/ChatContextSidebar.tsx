@@ -685,7 +685,7 @@ export default function ChatContextSidebar({
               </div>
             )}
 
-            {summary.contextFiles.slice(0, 6).map((file) => (
+            {summary.contextFiles.map((file) => (
               <ItemButton
                 key={file.key}
                 label={file.name}
@@ -703,7 +703,7 @@ export default function ChatContextSidebar({
               />
             ))}
 
-            {summary.directories.slice(0, 3).map((entry) => (
+            {summary.directories.map((entry) => (
               <ItemButton
                 key={entry.key}
                 label={entry.label}
@@ -712,7 +712,7 @@ export default function ChatContextSidebar({
               />
             ))}
 
-            {summary.skills.slice(0, 3).map((entry) => (
+            {summary.skills.map((entry) => (
               <ItemButton
                 key={entry.key}
                 label={entry.label}
@@ -740,7 +740,7 @@ export default function ChatContextSidebar({
                 {t('sessionContext.empty.taskContext')}
               </div>
             ) : (
-              summary.tasks.slice(0, 6).map((entry) => (
+              summary.tasks.map((entry) => (
               <div
                   key={entry.key}
                   className="rounded-xl border border-border/60 bg-gradient-to-r from-background via-background to-sky-50/20 px-2.5 py-2 shadow-sm dark:to-sky-950/10"
@@ -806,7 +806,7 @@ export default function ChatContextSidebar({
                 {t('sessionContext.empty.reviewQueue')}
               </div>
             ) : (
-              filteredOutputFiles.slice(0, 8).map((file) => (
+              filteredOutputFiles.map((file) => (
                 <ItemButton
                   key={file.key}
                   label={file.name}

@@ -102,6 +102,96 @@ describe('deriveSessionContextSummary', () => {
     expect(summary.outputFiles[0].relativePath).toBe('outputs/report.md');
     expect(summary.outputFiles[0].unread).toBe(true);
   });
+
+  it('recognizes Codex shell reads, plans, patch outputs, and web actions', () => {
+    const messages = [
+      {
+        type: 'assistant',
+        timestamp: '2026-03-30T05:18:28.000Z',
+        isToolUse: true,
+        toolName: 'Bash',
+        toolInput: JSON.stringify({
+          command: "sed -n '1,200p' src/components/chat/utils/sessionContextSummary.ts",
+          workdir: projectRoot,
+        }),
+        toolResult: {
+          content: 'const summary = true;',
+          isError: false,
+        },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-30T05:19:00.000Z',
+        isToolUse: true,
+        toolName: 'UpdatePlan',
+        toolInput: JSON.stringify({
+          plan: [
+            { step: 'Normalize Codex history', status: 'in_progress' },
+            { step: 'Expand session summary', status: 'pending' },
+          ],
+        }),
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-30T05:20:00.000Z',
+        isToolUse: true,
+        toolName: 'Edit',
+        toolInput: JSON.stringify({
+          file_path: 'src/components/chat/utils/sessionContextSummary.ts',
+          file_paths: [
+            'src/components/chat/utils/sessionContextSummary.ts',
+            'docs/plan.md',
+          ],
+        }),
+        toolResult: {
+          content: 'Success',
+          isError: false,
+          toolUseResult: {
+            changes: {
+              'src/components/chat/utils/sessionContextSummary.ts': { type: 'update' },
+              'docs/plan.md': { type: 'add' },
+            },
+          },
+        },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-30T05:21:00.000Z',
+        isToolUse: true,
+        toolName: 'WebSearch',
+        toolInput: JSON.stringify({ query: 'Codex session context panel' }),
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-30T05:21:30.000Z',
+        isToolUse: true,
+        toolName: 'OpenPage',
+        toolInput: JSON.stringify({ url: 'https://developers.openai.com/api/docs' }),
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-30T05:22:00.000Z',
+        isToolUse: true,
+        toolName: 'FindInPage',
+        toolInput: JSON.stringify({
+          url: 'https://developers.openai.com/api/docs',
+          pattern: 'session',
+        }),
+      },
+    ] as any;
+
+    const summary = deriveSessionContextSummary(messages, projectRoot);
+
+    expect(summary.contextFiles.some((item) => item.relativePath === 'src/components/chat/utils/sessionContextSummary.ts')).toBe(true);
+    expect(summary.outputFiles.map((item) => item.relativePath).sort()).toEqual([
+      'docs/plan.md',
+      'src/components/chat/utils/sessionContextSummary.ts',
+    ]);
+    expect(summary.tasks.some((item) => item.label === 'Normalize Codex history' && item.kind === 'todo')).toBe(true);
+    expect(summary.tasks.some((item) => item.label === 'Codex session context panel')).toBe(true);
+    expect(summary.tasks.some((item) => item.label === 'https://developers.openai.com/api/docs')).toBe(true);
+    expect(summary.tasks.some((item) => item.label === 'session')).toBe(true);
+  });
 });
 
 describe('mergeDistinctChatMessages', () => {

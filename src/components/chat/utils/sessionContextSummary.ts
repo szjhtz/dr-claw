@@ -60,6 +60,39 @@ type TaskAccumulator = {
   lastSeenAt: string;
 };
 
+const WINDOWS_ABS_PATTERN = /^[a-z]:\//i;
+const MARKDOWN_FILE_LINK_PATTERN = /\]\((\/[^)\s]+)\)/g;
+const ABSOLUTE_PATH_IN_TEXT_PATTERN = /(?:^|[\s("'`])((?:\/|[A-Za-z]:\/)[^)\s"'`]+)(?=$|[\s)"'`,:])/g;
+const RELATIVE_PATH_IN_TEXT_PATTERN = /(?:^|[\s("'`])((?:\.\.?\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+)(?=$|[\s)"'`,:])/g;
+const SHELL_TOKEN_PATTERN = /"[^"]*"|'[^']*'|`[^`]*`|\S+/g;
+const SHELL_COMMAND_BREAKS = new Set(['|', '||', '&&', ';']);
+const KNOWN_FILE_BASENAMES = new Set([
+  'Dockerfile',
+  'Makefile',
+  'README',
+  'README.md',
+  'README.zh-CN.md',
+  'CHANGELOG.md',
+  'package.json',
+  'package-lock.json',
+  'tsconfig.json',
+  'vitest.config.ts',
+  'vite.config.ts',
+  'vite.config.js',
+  'index.js',
+  'index.ts',
+  'index.tsx',
+  'index.jsx',
+  'AGENTS.md',
+  'SKILL.md',
+  'CLAUDE.md',
+]);
+
+const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/\/+/g, '/');
+
+const isAbsolutePath = (value: string) => value.startsWith('/') || WINDOWS_ABS_PATTERN.test(value);
+
+
 const toIsoTimestamp = (value: string | number | Date | undefined): string => {
   const date = value ? new Date(value) : new Date();
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
@@ -136,6 +169,14 @@ const extractFilePathsFromResult = (toolResult: any): string[] => {
         }
       });
     }
+
+    if (source.changes && typeof source.changes === 'object') {
+      Object.keys(source.changes).forEach((filePath) => {
+        if (typeof filePath === 'string' && filePath.trim()) {
+          candidates.push(filePath.trim());
+        }
+      });
+    }
   });
 
   return Array.from(new Set(candidates));
@@ -185,6 +226,158 @@ const extractSkillName = (message: ChatMessage): string | null => {
   }
 
   return null;
+};
+
+const extractToolInputPaths = (toolInput: any): string[] => {
+  const parsedInput = parseJsonValue(toolInput) || toolInput || {};
+  const candidates = new Set<string>();
+
+  [
+    parsedInput?.file_path,
+    parsedInput?.path,
+    parsedInput?.filePath,
+    parsedInput?.absolutePath,
+    parsedInput?.relativePath,
+  ].forEach((value) => {
+    if (typeof value === 'string' && value.trim()) {
+      candidates.add(value.trim());
+    }
+  });
+
+  [parsedInput?.file_paths, parsedInput?.paths].forEach((list) => {
+    if (Array.isArray(list)) {
+      list.forEach((value) => {
+        if (typeof value === 'string' && value.trim()) {
+          candidates.add(value.trim());
+        }
+      });
+    }
+  });
+
+  return Array.from(candidates);
+};
+
+const extractPlanItems = (toolInput: any): Array<{ label: string; detail?: string }> => {
+  const parsedInput = parseJsonValue(toolInput) || toolInput || {};
+  if (!Array.isArray(parsedInput?.plan)) {
+    return [];
+  }
+
+  return parsedInput.plan
+    .map((item: any) => ({
+      label: typeof item?.step === 'string' ? item.step.trim() : '',
+      detail: typeof item?.status === 'string' ? item.status.trim() : undefined,
+    }))
+    .filter((item: { label: string }) => item.label);
+};
+
+const stripShellToken = (token: string) => token.replace(/^['"`]|['"`]$/g, '');
+
+const isLikelyDirectoryPath = (value: string) => {
+  const normalized = normalizePath(value).replace(/\/$/, '');
+  const basename = normalized.split('/').pop() || normalized;
+  return !basename.includes('.') && !KNOWN_FILE_BASENAMES.has(basename);
+};
+
+const looksLikePathToken = (value: string) => {
+  const normalized = normalizePath(value);
+  if (!normalized || normalized.startsWith('-') || normalized.includes('://') || SHELL_COMMAND_BREAKS.has(normalized)) {
+    return false;
+  }
+
+  if (normalized.startsWith('/') || normalized.startsWith('./') || normalized.startsWith('../')) {
+    return true;
+  }
+
+  if (normalized.includes('/')) {
+    return true;
+  }
+
+  const basename = normalized.split('/').pop() || normalized;
+  return basename.includes('.') || KNOWN_FILE_BASENAMES.has(basename);
+};
+
+const extractPathsFromText = (value: string): string[] => {
+  if (!value) return [];
+
+  const candidates = new Set<string>();
+  const pushMatch = (matchValue: string) => {
+    const normalized = normalizePath(matchValue.replace(/[),:]+$/, ''));
+    if (!normalized || normalized.includes('://')) return;
+    candidates.add(normalized);
+  };
+
+  Array.from(value.matchAll(MARKDOWN_FILE_LINK_PATTERN)).forEach((match) => {
+    if (match[1]) pushMatch(match[1]);
+  });
+
+  Array.from(value.matchAll(ABSOLUTE_PATH_IN_TEXT_PATTERN)).forEach((match) => {
+    if (match[1]) pushMatch(match[1]);
+  });
+
+  Array.from(value.matchAll(RELATIVE_PATH_IN_TEXT_PATTERN)).forEach((match) => {
+    if (match[1]) pushMatch(match[1]);
+  });
+
+  return Array.from(candidates);
+};
+
+const extractShellContext = (
+  toolInput: any,
+  toolResult: any,
+): { files: string[]; directories: string[] } => {
+  const parsedInput = parseJsonValue(toolInput) || toolInput || {};
+  const command = String(parsedInput?.command || parsedInput?.cmd || '').trim();
+  const parsedCommands = Array.isArray(parsedInput?.parsed_cmd) ? parsedInput.parsed_cmd : [];
+  const files = new Set<string>();
+  const directories = new Set<string>();
+
+  parsedCommands.forEach((entry: any) => {
+    const nextPath = typeof entry?.path === 'string' ? entry.path.trim() : '';
+    if (!nextPath) return;
+    if (entry?.type === 'read') {
+      files.add(nextPath);
+      return;
+    }
+    if (entry?.type === 'list_files') {
+      directories.add(nextPath);
+      return;
+    }
+    if (entry?.type === 'search') {
+      if (nextPath) directories.add(nextPath);
+    }
+  });
+
+  (command.match(SHELL_TOKEN_PATTERN) || [])
+    .map(stripShellToken)
+    .forEach((token) => {
+      if (!looksLikePathToken(token)) {
+        const colonPath = token.includes(':') ? token.slice(token.indexOf(':') + 1) : '';
+        if (colonPath && looksLikePathToken(colonPath)) {
+          const normalized = normalizePath(colonPath);
+          if (isLikelyDirectoryPath(normalized)) directories.add(normalized);
+          else files.add(normalized);
+        }
+        return;
+      }
+
+      const normalized = normalizePath(token);
+      if (isLikelyDirectoryPath(normalized)) directories.add(normalized);
+      else files.add(normalized);
+    });
+
+  extractPathsFromText(String(toolResult?.content || '')).forEach((nextPath) => {
+    if (isLikelyDirectoryPath(nextPath)) {
+      directories.add(nextPath);
+    } else {
+      files.add(nextPath);
+    }
+  });
+
+  return {
+    files: Array.from(files),
+    directories: Array.from(directories),
+  };
 };
 
 const addFile = (
@@ -358,10 +551,9 @@ export function deriveSessionContextSummary(
 
     switch (message.toolName) {
       case 'Read': {
-        const filePath = parsedInput?.file_path || parsedInput?.path;
-        if (typeof filePath === 'string') {
+        extractToolInputPaths(parsedInput).forEach((filePath) => {
           addFile(contextFiles, filePath, projectRoot, 'Read', timestamp);
-        }
+        });
         break;
       }
 
@@ -370,6 +562,18 @@ export function deriveSessionContextSummary(
         const searchReason = message.toolName || 'Search';
         extractFilePathsFromResult(message.toolResult).forEach((filePath) => {
           addFile(contextFiles, filePath, projectRoot, searchReason, timestamp);
+        });
+        break;
+      }
+
+      case 'Bash':
+      case 'exec_command': {
+        const shellContext = extractShellContext(parsedInput, message.toolResult);
+        shellContext.files.forEach((filePath) => {
+          addFile(contextFiles, filePath, projectRoot, 'Shell', timestamp);
+        });
+        shellContext.directories.forEach((directoryPath) => {
+          addTask(directories, 'directory', toRelativePath(directoryPath, projectRoot) || directoryPath, 'Referenced in shell command', timestamp);
         });
         break;
       }
@@ -410,20 +614,35 @@ export function deriveSessionContextSummary(
         break;
       }
 
-      case 'Write': {
-        const filePath = parsedInput?.file_path || parsedInput?.path;
-        if (typeof filePath === 'string') {
-          addFile(outputFiles, filePath, projectRoot, 'Write', timestamp);
+      case 'UpdatePlan':
+      case 'update_plan': {
+        const planItems = extractPlanItems(parsedInput);
+        if (planItems.length === 0) {
+          addTask(tasks, 'task', 'Plan updated', undefined, timestamp);
+        } else {
+          planItems.forEach((item) => {
+            addTask(tasks, 'todo', item.label, item.detail, timestamp);
+          });
         }
+        break;
+      }
+
+      case 'Write': {
+        extractToolInputPaths(parsedInput).forEach((filePath) => {
+          addFile(outputFiles, filePath, projectRoot, 'Write', timestamp);
+        });
         break;
       }
 
       case 'Edit':
       case 'ApplyPatch': {
-        const filePath = parsedInput?.file_path || parsedInput?.path;
-        if (typeof filePath === 'string') {
+        const outputPaths = new Set([
+          ...extractToolInputPaths(parsedInput),
+          ...extractFilePathsFromResult(message.toolResult),
+        ]);
+        outputPaths.forEach((filePath) => {
           addFile(outputFiles, filePath, projectRoot, message.toolName === 'Edit' ? 'Edit' : 'Patch', timestamp);
-        }
+        });
         break;
       }
 
@@ -438,6 +657,38 @@ export function deriveSessionContextSummary(
         const skillLabel = parsedInput?.name || parsedInput?.skill;
         if (typeof skillLabel === 'string' && skillLabel.trim()) {
           addTask(skills, 'skill', skillLabel.trim(), 'Activated in session', timestamp);
+        }
+        break;
+      }
+
+      case 'ViewImage': {
+        extractToolInputPaths(parsedInput).forEach((filePath) => {
+          addFile(contextFiles, filePath, projectRoot, 'Image view', timestamp);
+        });
+        break;
+      }
+
+      case 'WebSearch': {
+        const query = parsedInput?.query || parsedInput?.command;
+        if (typeof query === 'string' && query.trim()) {
+          addTask(tasks, 'task', query.trim(), 'Web search', timestamp);
+        }
+        break;
+      }
+
+      case 'OpenPage': {
+        const url = parsedInput?.url;
+        if (typeof url === 'string' && url.trim()) {
+          addTask(tasks, 'task', url.trim(), 'Opened web page', timestamp);
+        }
+        break;
+      }
+
+      case 'FindInPage': {
+        const pattern = parsedInput?.pattern;
+        const url = parsedInput?.url;
+        if (typeof pattern === 'string' && pattern.trim()) {
+          addTask(tasks, 'task', pattern.trim(), typeof url === 'string' && url.trim() ? `Find in ${url.trim()}` : 'Find in page', timestamp);
         }
         break;
       }
