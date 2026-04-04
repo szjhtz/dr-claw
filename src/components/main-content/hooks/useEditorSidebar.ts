@@ -27,8 +27,8 @@ export function useEditorSidebar({
       const normalizedRoot = projectRoot.replace(/\\/g, '/').replace(/\/$/, '');
       const relativePath = normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)
         ? normalizedPath.slice(normalizedRoot.length + 1)
-        : filePath;
-      const fileName = normalizedPath.split('/').pop() || filePath;
+        : normalizedPath;
+      const fileName = normalizedPath.split('/').pop() || normalizedPath;
 
       setEditingFile({
         name: fileName,

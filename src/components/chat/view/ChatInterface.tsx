@@ -116,8 +116,8 @@ function ChatInterface({
     const root = (selectedProject?.fullPath || selectedProject?.path || '').replace(/\\/g, '/').replace(/\/$/, '');
     const relative = root && normalized.startsWith(`${root}/`)
       ? normalized.slice(root.length + 1)
-      : filePath;
-    const name = normalized.split('/').pop() || filePath;
+      : normalized;
+    const name = normalized.split('/').pop() || normalized;
     setPreviewFile({ name, path: relative, projectName: selectedProject?.name });
   }, [selectedProject]);
 
@@ -690,18 +690,18 @@ function ChatInterface({
     <>
       <div className="h-full flex min-h-0 flex-col xl:flex-row">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {previewFile && (
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <AnyCodeEditor
-              file={previewFile}
-              onClose={handleClosePreview}
-              projectPath={selectedProject?.path}
-              selectedProject={selectedProject}
-              isSidebar
-            />
-          </div>
-        )}
-        <div className={previewFile ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
+          {previewFile && (
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <AnyCodeEditor
+                file={previewFile}
+                onClose={handleClosePreview}
+                projectPath={selectedProject?.path}
+                selectedProject={selectedProject}
+                isSidebar
+              />
+            </div>
+          )}
+          <div className={previewFile ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
         {shouldShowImportedProjectAnalysisPrompt && (
           <div className="mx-auto mt-4 w-full max-w-3xl px-3 sm:px-4">
             <div className="rounded-xl border border-border bg-card/95 shadow-sm px-4 py-4 sm:px-5">
@@ -911,7 +911,7 @@ function ChatInterface({
           }
         />
 
-        </div>
+          </div>
         </div>
 
         <ChatContextSidebar

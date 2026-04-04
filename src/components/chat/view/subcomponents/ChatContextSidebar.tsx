@@ -610,7 +610,7 @@ export default function ChatContextSidebar({
 
   // Fetch file tree when files tab activates
   useEffect(() => {
-    if (sidebarTab !== 'files' || !projectName) {
+    if (sidebarTab !== 'files' || !projectName || fileTree.length > 0) {
       return;
     }
     let cancelled = false;
