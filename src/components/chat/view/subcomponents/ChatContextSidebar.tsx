@@ -601,13 +601,6 @@ export default function ChatContextSidebar({
     window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
   }, [sidebarWidth]);
 
-  // Auto-switch to files tab when file preview starts
-  useEffect(() => {
-    if (isFilePreview) {
-      setSidebarTab('files');
-    }
-  }, [isFilePreview]);
-
   // Reset file state on project change
   useEffect(() => {
     setFileTree([]);
@@ -676,41 +669,8 @@ export default function ChatContextSidebar({
         }`}
         style={!effectiveCollapsed ? { width: `${sidebarWidth}px` } : undefined}
       >
-      {!effectiveCollapsed && (
-        <div className="flex justify-center px-4 pt-3 pb-1">
-          <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5">
-            <button
-              type="button"
-              onClick={() => { setSidebarTab('chat'); onBackToChat?.(); }}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                sidebarTab === 'chat'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              {tCommon('tabs.chat')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setSidebarTab('files')}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                sidebarTab === 'files'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <FileText className="h-3.5 w-3.5" />
-              {tCommon('tabs.files')}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {effectiveCollapsed ? (
-        <div className="flex items-center justify-center border-b border-border/60 px-2 py-3">
+      <div className="relative flex items-center justify-center border-b border-border/60 px-2 pt-3 pb-2">
+        {effectiveCollapsed ? (
           <button
             type="button"
             onClick={toggleCollapsed}
@@ -719,26 +679,54 @@ export default function ChatContextSidebar({
           >
             <ChevronsLeft className="h-4 w-4" />
           </button>
-        </div>
-      ) : sidebarTab === 'chat' ? (
-        <div className="border-b border-border/60 px-4 py-3.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold tracking-tight text-foreground">{t('sessionContext.title')}</div>
-              <div className="mt-1 max-w-[42ch] text-[11px] leading-5 text-muted-foreground">
-                {t('sessionContext.description')}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {isLoadingTrace && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        ) : (
+          <>
+            <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5">
               <button
                 type="button"
-                onClick={toggleCollapsed}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-border/70 bg-background/85 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
-                title={t('sessionContext.actions.collapse')}
+                onClick={() => { setSidebarTab('chat'); onBackToChat?.(); }}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  sidebarTab === 'chat'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
               >
-                <ChevronsRight className="h-4 w-4" />
+                <MessageSquare className="h-3.5 w-3.5" />
+                {tCommon('tabs.chat')}
               </button>
+              <button
+                type="button"
+                onClick={() => setSidebarTab('files')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  sidebarTab === 'files'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {tCommon('tabs.files')}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="absolute right-2 inline-flex h-8 w-8 items-center justify-center rounded-xl border border-border/70 bg-background/85 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+              title={t('sessionContext.actions.collapse')}
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </button>
+          </>
+        )}
+      </div>
+
+      {!effectiveCollapsed && sidebarTab === 'chat' ? (
+        <div className="border-b border-border/60 px-4 py-3.5">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold tracking-tight text-foreground">{t('sessionContext.title')}</div>
+            <div className="mt-1 max-w-[42ch] text-[11px] leading-5 text-muted-foreground">
+              {t('sessionContext.description')}
             </div>
           </div>
 
