@@ -222,125 +222,115 @@ If `--timeout` is omitted, the CLI waits with heartbeat detection and uses a 1-h
 
 ## OpenClaw Integration
 
-The current integration has three stable layers:
-- **control plane**: OpenClaw runs local `drclaw ...` commands directly
-- **structured contract**: major JSON responses include a top-level `openclaw` payload
-- **proactive delivery**: a background watcher can push important project changes to Feishu/Lark through OpenClaw
+> OpenClaw turns Dr. Claw into a mobile-ready, voice-friendly research secretary by calling `drclaw` commands locally.
 
-### Minimum prerequisites
-
-Before wiring OpenClaw in, make sure:
-- Dr. Claw server is running
-- `drclaw` CLI is installed locally
-- at least one Dr. Claw project exists
-- OpenClaw has local shell or `exec` capability
-- if you want push notifications, OpenClaw can already deliver to a Feishu/Lark channel
-
-### Recommended first commands
-
-```bash
-drclaw --json chat waiting
-drclaw --json digest portfolio
-drclaw --json digest project --project <project-ref>
-drclaw --json workflow status --project <project-ref>
+```
+User (mobile / chat / voice)
+  ↕
+OpenClaw  ── runs `drclaw ...` ──→  drclaw CLI  ──→  Dr. Claw Server
+                ↑                                        │ WebSocket
+                └─── push notifications ←── Watcher ─────┘
 ```
 
-If OpenClaw can run those and consume the JSON, the core integration is working.
+| Layer | What it does |
+|-------|-------------|
+| **Control plane** | OpenClaw executes `drclaw --json ...` locally |
+| **Structured contract** | JSON responses carry versioned `openclaw.*` payloads |
+| **Proactive delivery** | Event-driven watcher pushes changes to Feishu / Lark |
 
-### One-command install for OpenClaw
+### Quick Setup
 
 ```bash
+# 1. Install and link
 drclaw install --server-url http://localhost:3001
-```
-
-This will:
-- copy the Dr. Claw skill into `~/.openclaw/workspace/skills/drclaw`
-- install wrapper scripts used for serialized local turns
-- save the current Dr. Claw server URL into `~/.drclaw_session.json`
-- remember the local `drclaw` executable path for OpenClaw usage
-
-To also save a default push channel:
-
-```bash
+# with push channel:
 drclaw install --server-url http://localhost:3001 --push-channel feishu:<chat_id>
 ```
 
-The OpenClaw-specific alias is also available:
+### Verify Core Commands
 
 ```bash
-drclaw openclaw install --server-url http://localhost:3001
+drclaw --json chat waiting                             # sessions needing input
+drclaw --json digest portfolio                         # cross-project summary
+drclaw --json digest project --project <project-ref>   # single project digest
+drclaw --json workflow status --project <project-ref>   # project status
 ```
 
-### Serialized local turns
+If OpenClaw can run these and consume the JSON, the core integration is working.
 
-When OpenClaw calls local `openclaw agent --local`, use the wrapper script to avoid session-lock collisions:
+### Serialized Local Turns
+
+Use the wrapper script to avoid session-lock collisions when OpenClaw calls `openclaw agent --local`:
 
 ```bash
-agent-harness/skills/dr-claw/scripts/openclaw_drclaw_turn.sh --json -m "Use your exec tool to run `drclaw --json digest portfolio`. Return only the result."
+agent-harness/skills/dr-claw/scripts/openclaw_drclaw_turn.sh \
+  --json -m "Use your exec tool to run \`drclaw --json digest portfolio\`. Return only the result."
 ```
 
-## Watcher And Proactive Notifications
+---
 
-The watcher is event-driven. It listens to Dr. Claw WebSocket events and only emits attention-worthy updates.
+## Watcher & Proactive Notifications
 
-Configure the default push channel once:
+The watcher subscribes to Dr. Claw WebSocket events and only pushes attention-worthy changes.
 
 ```bash
+# Configure
 drclaw openclaw configure --push-channel feishu:<chat_id>
-```
 
-Start, inspect, and stop the watcher:
-
-```bash
+# Manage
 drclaw --json openclaw-watch on --to feishu:<chat_id>
 drclaw --json openclaw-watch status
 drclaw --json openclaw-watch off
 ```
 
-What it does:
-- subscribes to Dr. Claw WebSocket events instead of polling digests
-- resolves the affected project for task, project, and file-change events when possible
-- compares workflow snapshots to derive higher-level signals instead of forwarding raw event names
-- deduplicates repeated notifications with a stable signature and 6-hour TTL
-- asks `openclaw agent --deliver` to write the final human-facing Feishu/Lark summary
-- falls back to a plain bridge push if agent summarization fails
-- stores state in `~/.drclaw/openclaw-watcher-state.json`
-- stores logs in `~/.drclaw/logs/openclaw-watcher.log`
+**How it works:**
 
-Current important signals include:
-- `human_decision_needed`
-- `waiting_for_human`
-- `blocker_detected`
-- `blocker_cleared`
-- `task_completed`
-- `next_task_changed`
-- `attention_needed`
-- `session_aborted`
+```
+WebSocket event → project resolution → snapshot diff → signal derivation
+    → dedup (6h TTL) → openclaw agent --deliver → Feishu / Lark message
+```
+
+**Derived signals:**
+
+| Signal | Meaning |
+|--------|---------|
+| `human_decision_needed` | Agent requests permission for a tool call |
+| `waiting_for_human` | Session blocked on user input |
+| `blocker_detected` / `blocker_cleared` | Task blocked / unblocked |
+| `task_completed` | Task(s) finished |
+| `next_task_changed` | Recommended next task changed |
+| `attention_needed` | General attention signal |
+| `session_aborted` | Session execution aborted |
+
+State: `~/.drclaw/openclaw-watcher-state.json` | Logs: `~/.drclaw/logs/openclaw-watcher.log`
+
+---
 
 ## Structured OpenClaw Schema
 
-Major machine-facing commands return a versioned `openclaw` field.
+Machine-facing commands return a versioned `openclaw` field:
 
-Current schema families:
-- `openclaw.turn.v1`
-- `openclaw.project.v1`
-- `openclaw.portfolio.v1`
-- `openclaw.daily.v1`
-- `openclaw.report.v1`
-- `openclaw.event.v1`
+| Schema | Purpose |
+|--------|---------|
+| `openclaw.turn.v1` | Single chat turn summary |
+| `openclaw.project.v1` | Project digest with counts and next actions |
+| `openclaw.portfolio.v1` | Cross-project overview with recommendations |
+| `openclaw.daily.v1` | Daily digest |
+| `openclaw.report.v1` | Mobile-ready report payload |
+| `openclaw.event.v1` | Watcher event with derived signals |
 
-Formal contract:
+**Client rendering tips:**
 
-```bash
-cat agent-harness/cli_anything/drclaw/SCHEMA.md
-```
+| When you need to... | Read this field |
+|----------------------|-----------------|
+| Decide whether to interrupt the user | `openclaw.decision.needed` |
+| Show quick actions / voice suggestions | `openclaw.next_actions` |
+| Render a compact summary | `openclaw.turn.summary` or `openclaw.focus` |
+| Handle watcher notifications | `openclaw.event.v1.event.signals` |
 
-Recommended client rendering rules:
-- prefer `openclaw.decision.needed` to decide whether to interrupt the user
-- prefer `openclaw.next_actions` for quick actions and voice suggestions
-- prefer `openclaw.turn.summary` or portfolio `openclaw.focus` for compact rendering
-- for watcher notifications, render from `openclaw.event.v1.event.signals` first
-- do not depend on raw `reply` text alone when `openclaw` exists
+> Always prefer the `openclaw` payload over raw `reply` text when both are present.
+
+Full contract: [`SCHEMA.md`](SCHEMA.md)
 
 ## Typical Use Cases
 

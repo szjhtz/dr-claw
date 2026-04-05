@@ -222,125 +222,115 @@ drclaw projects delete <project-ref>
 
 ## OpenClaw 集成
 
-当前集成已经有三层稳定能力：
-- **控制面**：OpenClaw 直接执行本地 `drclaw ...` 命令
-- **结构化契约**：主要 JSON 响应都带顶层 `openclaw` 字段
-- **主动推送**：后台 watcher 可以把重要项目变化通过 OpenClaw 主动推到 Feishu/Lark
+> OpenClaw 通过本地调用 `drclaw` 命令，把 Dr. Claw 变成一个移动端友好、支持语音的研究秘书。
 
-### 最低前置条件
+```
+用户（手机 / 聊天 / 语音）
+  ↕
+OpenClaw  ── 执行 `drclaw ...` ──→  drclaw CLI  ──→  Dr. Claw 服务
+                ↑                                        │ WebSocket
+                └─── 主动推送 ←──────── Watcher ─────────┘
+```
 
-接入 OpenClaw 之前，先确认：
-- Dr. Claw 服务已启动
-- 本地已安装 `drclaw` CLI
-- 至少已经存在一个 Dr. Claw 项目
-- OpenClaw 具备本地 shell 或 `exec` 能力
-- 如果要做推送，OpenClaw 已经能往 Feishu/Lark channel 发消息
+| 层级 | 功能 |
+|------|------|
+| **控制面** | OpenClaw 在本地执行 `drclaw --json ...` 命令 |
+| **结构化契约** | JSON 响应携带版本化的 `openclaw.*` schema |
+| **主动推送** | 事件驱动的 watcher 把重要变化推送到飞书 / Lark |
 
-### 推荐先跑通的命令
+### 快速接入
 
 ```bash
-drclaw --json chat waiting
-drclaw --json digest portfolio
-drclaw --json digest project --project <project-ref>
-drclaw --json workflow status --project <project-ref>
+# 1. 安装并关联
+drclaw install --server-url http://localhost:3001
+# 带推送 channel：
+drclaw install --server-url http://localhost:3001 --push-channel feishu:<chat_id>
+```
+
+### 验证核心命令
+
+```bash
+drclaw --json chat waiting                             # 等待回复的会话
+drclaw --json digest portfolio                         # 跨项目汇总
+drclaw --json digest project --project <project-ref>   # 单项目摘要
+drclaw --json workflow status --project <project-ref>   # 项目状态
 ```
 
 如果 OpenClaw 能执行这些命令并正确消费 JSON，核心集成就已经跑通了。
 
-### 一键安装给 OpenClaw
-
-```bash
-drclaw install --server-url http://localhost:3001
-```
-
-这个命令会：
-- 把 Dr. Claw skill 复制到 `~/.openclaw/workspace/skills/drclaw`
-- 安装 OpenClaw 本地串行调用需要的 wrapper script
-- 把当前 Dr. Claw 服务地址保存到 `~/.drclaw_session.json`
-- 记录本地 `drclaw` 可执行路径，供 OpenClaw 使用
-
-如果想同时保存默认推送 channel：
-
-```bash
-drclaw install --server-url http://localhost:3001 --push-channel feishu:<chat_id>
-```
-
-也可以用 OpenClaw 风格别名：
-
-```bash
-drclaw openclaw install --server-url http://localhost:3001
-```
-
 ### 串行化本地 turn
 
-当 OpenClaw 用 `openclaw agent --local` 调本地能力时，建议走 wrapper，避免 session lock 冲突：
+当 OpenClaw 用 `openclaw agent --local` 调本地能力时，建议走 wrapper 避免 session lock 冲突：
 
 ```bash
-agent-harness/skills/dr-claw/scripts/openclaw_drclaw_turn.sh --json -m "Use your exec tool to run `drclaw --json digest portfolio`. Return only the result."
+agent-harness/skills/dr-claw/scripts/openclaw_drclaw_turn.sh \
+  --json -m "Use your exec tool to run \`drclaw --json digest portfolio\`. Return only the result."
 ```
 
-## Watcher 和主动通知
+---
 
-watcher 现在是事件驱动的。它会监听 Dr. Claw 的 WebSocket 事件，只在真正值得提醒的变化上发通知。
+## Watcher 与主动通知
 
-先配置默认推送 channel：
+Watcher 订阅 Dr. Claw WebSocket 事件，只在真正值得提醒的变化上发通知。
 
 ```bash
+# 配置推送 channel
 drclaw openclaw configure --push-channel feishu:<chat_id>
-```
 
-启动、查看状态、停止：
-
-```bash
+# 管理 watcher
 drclaw --json openclaw-watch on --to feishu:<chat_id>
 drclaw --json openclaw-watch status
 drclaw --json openclaw-watch off
 ```
 
-它会做这些事：
-- 订阅 Dr. Claw WebSocket 事件，而不是轮询 digest
-- 在可能时把 task、project、file-change 事件解析到具体项目
-- 对比 workflow snapshot，提炼高层 signal，而不是转发原始事件名
-- 用稳定签名和 6 小时 TTL 做去重
-- 调 `openclaw agent --deliver` 生成最终给人看的 Feishu/Lark 摘要
-- 如果 agent 总结失败，回退到 bridge 直接发送
-- 状态保存在 `~/.drclaw/openclaw-watcher-state.json`
-- 日志保存在 `~/.drclaw/logs/openclaw-watcher.log`
+**工作流程：**
 
-当前重要 signal 包括：
-- `human_decision_needed`
-- `waiting_for_human`
-- `blocker_detected`
-- `blocker_cleared`
-- `task_completed`
-- `next_task_changed`
-- `attention_needed`
-- `session_aborted`
-
-## Structured OpenClaw Schema
-
-主要面向机器的命令现在都会返回版本化的 `openclaw` 字段。
-
-当前 schema 家族：
-- `openclaw.turn.v1`
-- `openclaw.project.v1`
-- `openclaw.portfolio.v1`
-- `openclaw.daily.v1`
-- `openclaw.report.v1`
-- `openclaw.event.v1`
-
-正式契约文档：
-
-```bash
-cat agent-harness/cli_anything/drclaw/SCHEMA.md
+```
+WebSocket 事件 → 项目解析 → snapshot 对比 → signal 推导
+    → 去重 (6h TTL) → openclaw agent --deliver → 飞书 / Lark 消息
 ```
 
-给客户端的推荐消费规则：
-- 用 `openclaw.decision.needed` 判断是否要打断用户
-- 用 `openclaw.next_actions` 生成快捷操作或语音建议
-- 用 `openclaw.turn.summary` 或 portfolio 的 `openclaw.focus` 做紧凑展示
-- watcher 通知优先读 `openclaw.event.v1.event.signals`
-- 只要有 `openclaw` 字段，就不要只依赖原始 `reply` 文本
+**派生 signal：**
+
+| Signal | 含义 |
+|--------|------|
+| `human_decision_needed` | Agent 请求工具调用权限 |
+| `waiting_for_human` | 会话等待用户输入 |
+| `blocker_detected` / `blocker_cleared` | 任务阻塞 / 解除阻塞 |
+| `task_completed` | 任务完成 |
+| `next_task_changed` | 推荐的下一个任务已变更 |
+| `attention_needed` | 需要关注 |
+| `session_aborted` | 会话执行中止 |
+
+状态文件：`~/.drclaw/openclaw-watcher-state.json` | 日志：`~/.drclaw/logs/openclaw-watcher.log`
+
+---
+
+## 结构化 OpenClaw Schema
+
+面向机器的命令返回版本化的 `openclaw` 字段：
+
+| Schema | 用途 |
+|--------|------|
+| `openclaw.turn.v1` | 单轮对话摘要 |
+| `openclaw.project.v1` | 项目摘要（状态、计数、下一步操作） |
+| `openclaw.portfolio.v1` | 跨项目概览与建议 |
+| `openclaw.daily.v1` | 每日摘要 |
+| `openclaw.report.v1` | 移动端报告 |
+| `openclaw.event.v1` | Watcher 事件与派生 signal |
+
+**客户端消费建议：**
+
+| 场景 | 读取字段 |
+|------|---------|
+| 判断是否需要打断用户 | `openclaw.decision.needed` |
+| 快捷操作 / 语音建议 | `openclaw.next_actions` |
+| 紧凑展示 | `openclaw.turn.summary` 或 `openclaw.focus` |
+| 处理 watcher 通知 | `openclaw.event.v1.event.signals` |
+
+> 只要有 `openclaw` 字段，就不要只依赖原始 `reply` 文本。
+
+正式契约文档：[`SCHEMA.md`](SCHEMA.md)
 
 ## 常见用法
 
