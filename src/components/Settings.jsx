@@ -909,31 +909,33 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
     }
   };
 
+  const getDefaultProject = () => projects?.[0] || { name: 'default', fullPath: '' };
+
   const handleClaudeLogin = () => {
     if (claudeAuthStatus.cliAvailable === false) return;
     setLoginProvider('claude');
-    setSelectedProject(projects?.[0] || { name: 'default', fullPath: '.' });
+    setSelectedProject(getDefaultProject());
     setShowLoginModal(true);
   };
 
   const handleCursorLogin = () => {
     if (cursorAuthStatus.cliAvailable === false) return;
     setLoginProvider('cursor');
-    setSelectedProject(projects?.[0] || { name: 'default', fullPath: '.' });
+    setSelectedProject(getDefaultProject());
     setShowLoginModal(true);
   };
 
   const handleCodexLogin = () => {
     if (codexAuthStatus.cliAvailable === false) return;
     setLoginProvider('codex');
-    setSelectedProject(projects?.[0] || { name: 'default', fullPath: '.' });
+    setSelectedProject(getDefaultProject());
     setShowLoginModal(true);
   };
 
   const handleGeminiLogin = () => {
     if (geminiAuthStatus.cliAvailable === false) return;
     setLoginProvider('gemini');
-    setSelectedProject(projects?.[0] || { name: 'default', fullPath: '.' });
+    setSelectedProject(getDefaultProject());
     setShowLoginModal(true);
   };
 
