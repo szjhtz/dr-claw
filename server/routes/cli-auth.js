@@ -512,9 +512,24 @@ function checkCursorStatus() {
   });
 }
 
+// Auth precedence:
+// 1. JWT tokens (id_token / access_token) from ~/.codex/auth.json
+// 2. OPENAI_API_KEY from server environment variable
+// 3. OPENAI_API_KEY from ~/.codex/auth.json
 async function checkCodexCredentials() {
   let cliCommand = process.env.CODEX_CLI_PATH || 'codex';
   try {
+    if (isCliMockedMissing('codex')) {
+      return {
+        authenticated: false,
+        email: null,
+        error: 'Codex CLI not installed (mocked)',
+        cliAvailable: false,
+        cliCommand,
+        installHint: buildCliInstallHint('codex')
+      };
+    }
+
     const resolvedCliCommand = await resolveAvailableCliCommand({
       envVarName: 'CODEX_CLI_PATH',
       defaultCommands: ['codex'],
@@ -544,12 +559,21 @@ async function checkCodexCredentials() {
       };
     }
 
+    const envApiKey = String(process.env.OPENAI_API_KEY || '').trim();
     const authPath = path.join(os.homedir(), '.codex', 'auth.json');
-    const content = await fs.readFile(authPath, 'utf8');
-    const auth = JSON.parse(content);
+    let auth = null;
+
+    try {
+      const content = await fs.readFile(authPath, 'utf8');
+      auth = JSON.parse(content);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.warn('[DEBUG] Codex: Failed to read auth.json, falling back to env auth if available:', error.message);
+      }
+    }
 
     // Tokens are nested under 'tokens' key
-    const tokens = auth.tokens || {};
+    const tokens = auth?.tokens || {};
 
     // Check for valid tokens (id_token or access_token)
     if (tokens.id_token || tokens.access_token) {
@@ -578,8 +602,19 @@ async function checkCodexCredentials() {
       };
     }
 
-    // Also check for OPENAI_API_KEY as fallback auth method (in auth.json or env)
-    if (auth.OPENAI_API_KEY || process.env.OPENAI_API_KEY) {
+    // Service deployments may authenticate Codex through server env only.
+    if (envApiKey) {
+      return {
+        authenticated: true,
+        email: 'API Key Connected',
+        method: 'custom_api',
+        cliAvailable: true,
+        cliCommand
+      };
+    }
+
+    // Also check for OPENAI_API_KEY stored in auth.json as a fallback auth method
+    if (auth?.OPENAI_API_KEY) {
       return {
         authenticated: true,
         email: 'API Key Connected',
@@ -592,30 +627,11 @@ async function checkCodexCredentials() {
     return {
       authenticated: false,
       email: null,
-      error: 'No valid tokens found',
+      error: auth ? 'No valid tokens found' : 'Codex not configured',
       cliAvailable: true,
       cliCommand
     };
   } catch (error) {
-    // File not found — check env var before giving up
-    if (process.env.OPENAI_API_KEY) {
-      return {
-        authenticated: true,
-        email: 'API Key Connected',
-        method: 'custom_api',
-        cliAvailable: true,
-        cliCommand
-      };
-    }
-    if (error.code === 'ENOENT') {
-      return {
-        authenticated: false,
-        email: null,
-        error: 'Codex not configured',
-        cliAvailable: true,
-        cliCommand
-      };
-    }
     return {
       authenticated: false,
       email: null,
@@ -954,5 +970,9 @@ router.post('/local/save-config', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+export {
+  checkCodexCredentials,
+};
 
 export default router;
