@@ -6,6 +6,7 @@ import PermissionRequestsBanner from './PermissionRequestsBanner';
 import ChatInputControls from './ChatInputControls';
 import ReferencePicker from '../../../references/view/ReferencePicker';
 import PromptBadgeDropdown from './PromptBadgeDropdown';
+import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
 import type {
@@ -464,7 +465,7 @@ export default function ChatComposer({
             />
           )}
           <div aria-hidden="true" className="absolute inset-0 pointer-events-none overflow-hidden rounded-3xl">
-            <div className={`chat-input-placeholder block w-full ${projectName ? 'pl-[5.5rem]' : 'pl-12'} ${centered ? 'pr-16 pt-4 pb-2 text-sm' : 'pr-20 sm:pr-40 py-1.5 sm:py-4 text-base'} text-transparent leading-6 whitespace-pre-wrap break-words`}>
+            <div className={`chat-input-placeholder block w-full pl-5 ${centered ? 'pr-16 pt-4 pb-2 text-sm' : 'pr-20 sm:pr-40 py-1.5 sm:py-4 text-base'} text-transparent leading-6 whitespace-pre-wrap break-words`}>
               {renderInputWithMentions(input)}
             </div>
           </div>
@@ -483,39 +484,11 @@ export default function ChatComposer({
               onInput={onTextareaInput}
               placeholder={placeholder}
               disabled={isLoading}
-              className={`chat-input-placeholder block w-full ${projectName ? 'pl-[5.5rem]' : 'pl-12'} ${centered ? 'pr-16 pt-4 pb-2 min-h-[56px] max-h-[200px] text-sm' : 'pr-20 sm:pr-40 py-1.5 sm:py-4 min-h-[50px] sm:min-h-[80px] max-h-[40vh] sm:max-h-[300px] text-base'} bg-transparent rounded-3xl focus:outline-none text-foreground placeholder-muted-foreground/50 disabled:opacity-50 resize-none overflow-y-auto leading-6 transition-all duration-200`}
+              className={`chat-input-placeholder block w-full pl-5 ${centered ? 'pr-16 pt-4 pb-2 min-h-[56px] max-h-[200px] text-sm' : 'pr-20 sm:pr-40 py-1.5 sm:py-4 min-h-[50px] sm:min-h-[80px] max-h-[40vh] sm:max-h-[300px] text-base'} bg-transparent rounded-3xl focus:outline-none text-foreground placeholder-muted-foreground/50 disabled:opacity-50 resize-none overflow-y-auto leading-6 transition-all duration-200`}
               style={{ height: centered ? '56px' : '50px' }}
             />
 
-            <div className="absolute left-1 top-1/2 transform -translate-y-1/2 flex items-center">
-              <button
-                type="button"
-                onClick={openFilePicker}
-                className="p-2 hover:bg-accent/60 rounded-xl transition-colors"
-                title={t('input.attachFiles')}
-              >
-                <svg className="w-5 h-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                  />
-                </svg>
-              </button>
-              {projectName && onReferenceContext && (
-                <button
-                  type="button"
-                  onClick={() => setShowReferencePicker(!showReferencePicker)}
-                  className="p-2 hover:bg-accent/60 rounded-xl transition-colors"
-                  title={t('input.attachReferences')}
-                >
-                  <svg className="w-5 h-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                  </svg>
-                </button>
-              )}
-            </div>
+
 
             <div className={`absolute ${centered ? 'right-11' : 'right-14'} top-1/2 transform -translate-y-1/2`}>
               <MicButton onTranscript={onTranscript} className={centered ? '!w-7 !h-7' : '!w-9 !h-9'} />
@@ -557,6 +530,15 @@ export default function ChatComposer({
               <div className="flex items-center gap-2 px-4 py-2">
                 {/* Left side */}
                 <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={openFilePicker}
+                    className="p-1 hover:bg-accent/60 rounded-full transition-colors flex items-center justify-center text-muted-foreground"
+                    title={t('input.attachFiles')}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+
                   {/* Session modes — only in empty state */}
                   {centered && onNewSessionModeChange && sessionModeChoices.map((choice) => {
                     const active = newSessionMode === choice.id;
