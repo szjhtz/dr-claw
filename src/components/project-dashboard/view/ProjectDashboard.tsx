@@ -216,6 +216,17 @@ function getLastActivity(project: Project) {
   return project.createdAt ?? null;
 }
 
+function getRecentActivities(project: Project, count = 3) {
+  return getProjectSessions(project)
+    .map((session) => {
+      const date = session.updated_at || session.lastActivity || session.created_at || session.createdAt;
+      return date ? { title: session.title || session.name || session.id, date, provider: session.__provider } : null;
+    })
+    .filter((entry): entry is { title: string; date: string; provider?: SessionProvider } => Boolean(entry))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, count);
+}
+
 function getTaskmasterMetadata(project: Project): TaskmasterMetadata | null {
   const metadata = project.taskmaster?.metadata;
 
@@ -653,6 +664,7 @@ export default function ProjectDashboard({
             const metadata = getTaskmasterMetadata(project);
             const progress = getProgress(project);
             const lastActivity = getLastActivity(project);
+            const recentActivities = getRecentActivities(project);
             const projectTokenUsage = tokenUsageSummary?.projects?.[project.name];
             const autoResearch = autoResearchStatuses[project.name];
             const activeRun = autoResearch?.activeRun;
@@ -740,20 +752,23 @@ export default function ProjectDashboard({
                         style={{ width: `${progress ?? 6}%` }}
                       />
                     </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-                      <span>
-                        {lastActivity
-                          ? t('projectDashboard.lastActivity', {
-                              time: formatTimeAgo(lastActivity, now, t),
-                            })
-                          : t('projectDashboard.noRecentActivity')}
-                      </span>
+                    <div className="mt-1.5 space-y-0.5 text-[10px] text-muted-foreground">
+                      {recentActivities.length > 0 ? (
+                        recentActivities.map((activity, i) => (
+                          <div key={i} className="flex items-center gap-1.5 truncate">
+                            <span className="shrink-0 text-muted-foreground/50">{formatTimeAgo(activity.date, now, t)}</span>
+                            <span className="truncate">{activity.title}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <span>{t('projectDashboard.noRecentActivity')}</span>
+                      )}
                       {metadata?.lastModified ? (
-                        <span>
+                        <div className="text-muted-foreground/60">
                           {t('projectDashboard.pipelineUpdated', {
                             time: formatTimeAgo(metadata.lastModified, now, t),
                           })}
-                        </span>
+                        </div>
                       ) : null}
                     </div>
                   </div>
