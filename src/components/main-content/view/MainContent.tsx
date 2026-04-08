@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 
 import ChatInterface from '../../chat/view/ChatInterface';
 import SkillsDashboard from '../../SkillsDashboard';
+import AutoResearchHub from '../../AutoResearchHub';
 import ComputeResourcesDashboard from '../../compute-dashboard/ComputeResourcesDashboard';
 import ErrorBoundary from '../../ErrorBoundary';
 import SurveyPage from '../../survey/view/SurveyPage';
@@ -19,6 +20,7 @@ import { useUiPreferences } from '../../../hooks/useUiPreferences';
 import { useEditorSidebar } from '../hooks/useEditorSidebar';
 import type { Project } from '../../../types/app';
 import type { Reference } from '../../references/types';
+import { queueSkillCommandDraft } from '../../../utils/skillCommandDraft';
 
 type TaskMasterContextValue = {
   currentProject?: Project | null;
@@ -126,6 +128,25 @@ function MainContent({
     );
   }
 
+  if (activeTab === 'autoresearch') {
+    return (
+      <div className="h-full flex flex-col">
+        <MainContentHeader
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          selectedProject={null}
+          selectedSession={null}
+          shouldShowTasksTab={shouldShowTasksTab}
+          isMobile={isMobile}
+          onMenuClick={onMenuClick}
+        />
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <AutoResearchHub />
+        </div>
+      </div>
+    );
+  }
+
   if (activeTab === 'skills') {
     return (
       <div className="h-full flex flex-col">
@@ -140,7 +161,17 @@ function MainContent({
         />
 
         <div className="flex-1 min-h-0 overflow-hidden">
-          <SkillsDashboard />
+          <SkillsDashboard
+            onSendToChat={(command: string) => {
+              queueSkillCommandDraft(command);
+              // Select the most recent project if available, then switch to chat
+              const recentProject = projects?.[0];
+              if (recentProject) {
+                onProjectSelect(recentProject);
+              }
+              setActiveTab('chat');
+            }}
+          />
         </div>
       </div>
     );
