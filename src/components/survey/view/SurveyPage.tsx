@@ -22,7 +22,7 @@ import { Input } from '../../ui/input';
 import { cn } from '../../../lib/utils';
 import { api } from '../../../utils/api';
 import type { Project } from '../../../types/app';
-import { useSurveyData, type SurveyFile } from '../hooks/useSurveyData';
+import { useSurveyData, type SurveyFile, type SurveyTask } from '../hooks/useSurveyData';
 import MermaidDiagramViewer from './MermaidDiagramViewer';
 import { saveSurveyDiagramSource } from '../utils/diagramWindow';
 import ReferencesPanel from '../../references/view/ReferencesPanel';
@@ -35,6 +35,7 @@ type SurveyPageProps = {
 
 type SelectedItem =
   | { type: 'file'; value: SurveyFile }
+  | { type: 'task'; value: SurveyTask }
   | null;
 
 type PreviewState = {
@@ -262,6 +263,35 @@ function PreviewContent({
   );
 }
 
+function TaskPreview({ task }: { task: SurveyTask }) {
+  const { t } = useTranslation('common');
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-background/40">
+      <div className="border-b border-border/40 px-5 py-4">
+        <div className="flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-violet-500" />
+          <h3 className="text-sm font-semibold text-foreground">{task.title}</h3>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Badge variant="outline">{t('surveyPage.preview.surveyTask')}</Badge>
+          <Badge variant="secondary">{task.status || 'pending'}</Badge>
+        </div>
+      </div>
+      <div className="space-y-4 p-5">
+        <div>
+          <div className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+            {t('surveyPage.preview.taskDescription')}
+          </div>
+          <div className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+            {task.description || t('surveyPage.empty.noTaskDescription')}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SurveyPage({ selectedProject, onChatFromReference }: SurveyPageProps) {
   const { t } = useTranslation('common');
   const { papers, reports, graphs, notes, tasks, loading, error, refresh } = useSurveyData(selectedProject);
@@ -347,13 +377,25 @@ export default function SurveyPage({ selectedProject, onChatFromReference }: Sur
       }
     }
 
+    if (selectedItem?.type === 'task') {
+      const stillExists = tasks.some((task) => task.id === selectedItem.value.id);
+      if (stillExists) {
+        return;
+      }
+    }
+
     if (availableFiles.length > 0) {
       setSelectedItem({ type: 'file', value: availableFiles[0] });
       return;
     }
 
+    if (tasks.length > 0) {
+      setSelectedItem({ type: 'task', value: tasks[0] });
+      return;
+    }
+
     setSelectedItem(null);
-  }, [graphs, notes, papers, reports, selectedItem]);
+  }, [graphs, notes, papers, reports, selectedItem, tasks]);
 
   useEffect(() => {
     let revokedUrl: string | null = null;
@@ -497,6 +539,8 @@ export default function SurveyPage({ selectedProject, onChatFromReference }: Sur
             <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-border/60 bg-background/40 px-6 text-center text-sm text-muted-foreground">
               {t('surveyPage.empty.noSelection')}
             </div>
+          ) : selectedItem.type === 'task' ? (
+            <TaskPreview task={selectedItem.value} />
           ) : preview.loading ? (
             <div className="flex h-full items-center justify-center rounded-xl border border-border/60 bg-background/40 text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -563,10 +607,19 @@ export default function SurveyPage({ selectedProject, onChatFromReference }: Sur
                     {t('surveyPage.empty.noTasks')}
                   </div>
                 ) : (
-                  tasks.map((task) => (
-                      <div
+                  tasks.map((task) => {
+                    const isSelected = selectedItem?.type === 'task' && selectedItem.value.id === task.id;
+                    return (
+                      <button
                         key={task.id}
-                        className="mb-1 w-full rounded-lg border border-transparent bg-background/55 px-2 py-2 text-left last:mb-0"
+                        type="button"
+                        onClick={() => handleSelectItem({ type: 'task', value: task })}
+                        className={cn(
+                          'mb-1 w-full rounded-lg border px-2 py-2 text-left transition-colors last:mb-0',
+                          isSelected
+                            ? 'border-primary/60 bg-primary/8 shadow-sm'
+                            : 'border-transparent bg-background/55 hover:border-border/60 hover:bg-background/80',
+                        )}
                       >
                         <div className="text-xs font-medium text-foreground">{task.title}</div>
                         <div className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-muted-foreground">
@@ -575,9 +628,9 @@ export default function SurveyPage({ selectedProject, onChatFromReference }: Sur
                         <Badge variant="secondary" className="mt-1.5 text-[10px] px-1.5 py-0">
                           {task.status || 'pending'}
                         </Badge>
-                      </div>
-                    )
-                  )
+                      </button>
+                    );
+                  })
                 )}
               </div>
             </CollapsiblePanel>
