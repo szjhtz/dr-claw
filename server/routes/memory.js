@@ -1,5 +1,6 @@
 import express from 'express';
 import { memoryDb, appSettingsDb } from '../database/db.js';
+import { syncMemoryFiles } from '../utils/memoryPrompt.js';
 
 const router = express.Router();
 const MEMORY_ENABLED_KEY = 'memory_enabled';
@@ -27,6 +28,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Memory content is required' });
     }
     const memory = memoryDb.create(req.user.id, content.trim(), category || 'general');
+    syncMemoryFiles(req.user.id).catch(err => console.warn('[memory] sync error:', err.message));
     res.status(201).json({ memory });
   } catch (error) {
     console.error('Error creating memory:', error);
@@ -45,6 +47,7 @@ router.put('/:id', async (req, res) => {
     if (!memory) {
       return res.status(404).json({ error: 'Memory not found' });
     }
+    syncMemoryFiles(req.user.id).catch(err => console.warn('[memory] sync error:', err.message));
     res.json({ memory });
   } catch (error) {
     console.error('Error updating memory:', error);
@@ -59,6 +62,7 @@ router.patch('/:id/toggle', async (req, res) => {
     if (!memory) {
       return res.status(404).json({ error: 'Memory not found' });
     }
+    syncMemoryFiles(req.user.id).catch(err => console.warn('[memory] sync error:', err.message));
     res.json({ memory });
   } catch (error) {
     console.error('Error toggling memory:', error);
@@ -73,6 +77,7 @@ router.delete('/:id', async (req, res) => {
     if (!deleted) {
       return res.status(404).json({ error: 'Memory not found' });
     }
+    syncMemoryFiles(req.user.id).catch(err => console.warn('[memory] sync error:', err.message));
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting memory:', error);
@@ -100,6 +105,7 @@ router.patch('/settings', async (req, res) => {
   try {
     const { enabled } = req.body;
     appSettingsDb.set(MEMORY_ENABLED_KEY, enabled ? 'true' : 'false');
+    syncMemoryFiles(req.user.id).catch(err => console.warn('[memory] sync error:', err.message));
     res.json({ enabled: !!enabled });
   } catch (error) {
     console.error('Error updating memory settings:', error);
