@@ -134,9 +134,10 @@ export async function refreshAccessToken(tokens) {
  */
 export async function getValidAccessToken() {
   let tokens = await loadGeminiOAuthTokens();
-  if (!tokens?.access_token) return null;
+  if (!tokens) return null;
 
-  if (isTokenExpired(tokens)) {
+  if (!tokens.access_token || isTokenExpired(tokens)) {
+    if (!tokens.refresh_token) return null;
     try {
       tokens = await refreshAccessToken(tokens);
     } catch (err) {
@@ -154,24 +155,24 @@ export async function getValidAccessToken() {
 
 /**
  * Returns { headers, authMethod } for authenticating Gemini API calls.
- * Prefers OAuth, falls back to API key.
+ * Prefers API key (consistent with queryGeminiApi env-var check), falls back to OAuth.
  */
 export async function getGeminiAuthHeaders(userId) {
-  // Try OAuth first
-  const accessToken = await getValidAccessToken();
-  if (accessToken) {
-    return {
-      headers: { 'Authorization': `Bearer ${accessToken}` },
-      authMethod: 'oauth',
-    };
-  }
-
-  // Fallback to API key
+  // Try API key first (matches queryGeminiApi precedence)
   const apiKey = getGeminiApiKeyForUser(userId);
   if (apiKey) {
     return {
       headers: { 'x-goog-api-key': apiKey },
       authMethod: 'api-key',
+    };
+  }
+
+  // Fallback to OAuth
+  const accessToken = await getValidAccessToken();
+  if (accessToken) {
+    return {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+      authMethod: 'oauth',
     };
   }
 

@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { encodeProjectPath, ensureProjectSkillLinks, reconcileGeminiSessionIndex } from './projects.js';
 import { writeProjectTemplates } from './templates/index.js';
@@ -14,6 +14,7 @@ import { buildGeminiThinkingConfig } from '../shared/geminiThinkingSupport.js';
 import { spawnGemini } from './gemini-cli.js';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const CODE_ASSIST_BASE = 'https://cloudcode-pa.googleapis.com/v1internal';
@@ -33,6 +34,7 @@ const GEMINI_MODEL_FALLBACK_CHAIN = [
 
 const activeGeminiApiSessions = new Map();
 const codeAssistProjectCache = new Map();
+const CODE_ASSIST_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export const GEMINI_TOOL_DECLARATIONS = [
   {
@@ -205,9 +207,7 @@ export const READ_ONLY_TOOLS = new Set([
   'glob',
   'grep_search',
   'list_directory',
-  'web_fetch',
   'google_web_search',
-  'write_todos',
 ]);
 
 function sendMessage(ws, data) {
@@ -229,7 +229,11 @@ function truncateOutput(text) {
 
 function resolveToolPath(workingDir, candidate) {
   if (!candidate) return workingDir;
-  return path.isAbsolute(candidate) ? candidate : path.resolve(workingDir, candidate);
+  const resolved = path.isAbsolute(candidate) ? path.resolve(candidate) : path.resolve(workingDir, candidate);
+  if (!resolved.startsWith(workingDir + path.sep) && resolved !== workingDir) {
+    throw new Error(`Path "${candidate}" resolves outside project directory`);
+  }
+  return resolved;
 }
 
 function getFileArg(args = {}) {
@@ -274,9 +278,13 @@ async function executeTool(name, rawArgs, workingDir) {
         }
 
         const results = await Promise.all(paths.slice(0, 20).map(async (candidate) => {
-          const resolved = resolveToolPath(workingDir, candidate);
-          const content = await fs.readFile(resolved, 'utf-8');
-          return `==> ${candidate} <==\n${content}`;
+          try {
+            const resolved = resolveToolPath(workingDir, candidate);
+            const content = await fs.readFile(resolved, 'utf-8');
+            return `==> ${candidate} <==\n${content}`;
+          } catch (fileError) {
+            return `==> ${candidate} <==\nError: ${fileError.message}`;
+          }
         }));
         return truncateOutput(results.join('\n\n'));
       }
@@ -324,27 +332,35 @@ async function executeTool(name, rawArgs, workingDir) {
 
       case 'glob': {
         const searchDir = resolveToolPath(workingDir, args.path);
-        const safePattern = String(args.pattern || '').replace(/'/g, "'\\''");
-        const { stdout } = await execAsync(
-          `rg --files --glob '${safePattern}' 2>/dev/null | head -300`,
-          { cwd: searchDir, timeout: 30_000, maxBuffer: 1024 * 1024 },
-        ).catch(() =>
-          execAsync(`find . -name '${safePattern}' -type f 2>/dev/null | head -300`, {
-            cwd: searchDir,
-            timeout: 30_000,
-            maxBuffer: 1024 * 1024,
-          }),
-        );
-        return truncateOutput(stdout || '(no matches)');
+        const pattern = String(args.pattern || '');
+        try {
+          const { stdout } = await execFileAsync(
+            'rg', ['--files', '--glob', pattern],
+            { cwd: searchDir, timeout: 30_000, maxBuffer: 1024 * 1024 },
+          );
+          const lines = stdout.split('\n').filter(Boolean).slice(0, 300);
+          return truncateOutput(lines.join('\n') || '(no matches)');
+        } catch {
+          try {
+            const { stdout } = await execFileAsync(
+              'find', ['.', '-name', pattern, '-type', 'f'],
+              { cwd: searchDir, timeout: 30_000, maxBuffer: 1024 * 1024 },
+            );
+            const lines = stdout.split('\n').filter(Boolean).slice(0, 300);
+            return truncateOutput(lines.join('\n') || '(no matches)');
+          } catch {
+            return '(no matches)';
+          }
+        }
       }
 
       case 'grep_search': {
         const target = resolveToolPath(workingDir, args.path);
-        let command = `rg --line-number --max-count 100 --max-columns 200`;
-        if (args.include) command += ` --glob '${String(args.include).replace(/'/g, "'\\''")}'`;
-        command += ` '${String(args.pattern || '').replace(/'/g, "'\\''")}' '${target}'`;
+        const rgArgs = ['--line-number', '--max-count', '100', '--max-columns', '200'];
+        if (args.include) rgArgs.push('--glob', String(args.include));
+        rgArgs.push(String(args.pattern || ''), target);
         try {
-          const { stdout } = await execAsync(command, {
+          const { stdout } = await execFileAsync('rg', rgArgs, {
             cwd: workingDir,
             timeout: 30_000,
             maxBuffer: 2 * 1024 * 1024,
@@ -362,9 +378,26 @@ async function executeTool(name, rawArgs, workingDir) {
       }
 
       case 'web_fetch': {
-        const response = await fetch(args.url, {
+        const fetchUrl = new URL(String(args.url || ''));
+        const hostname = fetchUrl.hostname.toLowerCase();
+        if (
+          hostname === 'localhost' ||
+          hostname === '127.0.0.1' ||
+          hostname === '::1' ||
+          hostname === '0.0.0.0' ||
+          hostname.endsWith('.local') ||
+          hostname.startsWith('169.254.') ||
+          hostname.startsWith('10.') ||
+          hostname.startsWith('192.168.') ||
+          /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
+          fetchUrl.protocol === 'file:'
+        ) {
+          return 'Error: URL points to a private/internal network address (blocked)';
+        }
+        const response = await fetch(fetchUrl.href, {
           headers: { 'User-Agent': 'Dr. Claw Gemini API Agent' },
           signal: AbortSignal.timeout(30_000),
+          redirect: 'manual',
         });
         return truncateOutput(await response.text());
       }
@@ -501,9 +534,13 @@ async function sessionsDir() {
   return dir;
 }
 
+function sanitizeSessionId(sessionId) {
+  return String(sessionId || '').replace(/[/\\]/g, '_').replace(/\.\./g, '_');
+}
+
 async function sessionFilePath(sessionId) {
   const dir = await sessionsDir();
-  return path.join(dir, `${sessionId}.jsonl`);
+  return path.join(dir, `${sanitizeSessionId(sessionId)}.jsonl`);
 }
 
 async function ensureSessionMetadata(sessionId, { cwd, sessionMode = 'research', summary = null }) {
@@ -1143,8 +1180,10 @@ function summarizeCodeAssistBootstrapError(status, bodyText) {
 
 async function loadCodeAssistProject(authHeaders, signal) {
   const cacheKey = getCodeAssistCacheKey(authHeaders);
-  const cachedProject = codeAssistProjectCache.get(cacheKey);
-  if (cachedProject) return cachedProject;
+  const cachedEntry = codeAssistProjectCache.get(cacheKey);
+  if (cachedEntry && (Date.now() - cachedEntry.ts) < CODE_ASSIST_CACHE_TTL_MS) {
+    return cachedEntry.projectId;
+  }
 
   const configuredProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID || undefined;
   const body = {
@@ -1183,7 +1222,7 @@ async function loadCodeAssistProject(authHeaders, signal) {
     throw new Error('Code Assist onboarding succeeded but no project ID was returned.');
   }
 
-  codeAssistProjectCache.set(cacheKey, projectId);
+  codeAssistProjectCache.set(cacheKey, { projectId, ts: Date.now() });
   return projectId;
 }
 
@@ -1412,7 +1451,7 @@ export async function queryGeminiApi(command, options = {}, ws) {
           ...options,
           cwd: workingDirectory,
           projectPath: workingDirectory,
-          model,
+          model: activeModel,
           sessionId: currentSessionId,
         }, ws, currentSessionId, {
           errorMessage: error?.message || 'Code Assist bootstrap failed',
@@ -1444,9 +1483,9 @@ export async function queryGeminiApi(command, options = {}, ws) {
       }
     }
 
-    if (sessionId && workingDirectory) {
+    if (currentSessionId && workingDirectory) {
       applyStageTagsToSession({
-        sessionId,
+        sessionId: currentSessionId,
         projectPath: workingDirectory,
         stageTagKeys,
         source: stageTagSource,
@@ -1543,6 +1582,8 @@ export async function queryGeminiApi(command, options = {}, ws) {
 
       if (request.error) {
         if (request.error.status === 401 || request.error.status === 403) {
+          sendGeminiApiError(ws, currentSessionId, request.error);
+          sendMessage(ws, { type: 'gemini-complete', sessionId: currentSessionId, exitCode: 1 });
           return { authFailed: true };
         }
         if (request.error.isRetryable && isCapacityExhaustedError(request.error)) {
@@ -1624,7 +1665,9 @@ export async function queryGeminiApi(command, options = {}, ws) {
         break;
       }
 
-      const pendingFunctionCalls = [];
+      const allFunctionCallMeta = [];
+      const functionResponses = [];
+
       if (result.content) {
         await appendSession(currentSessionId, {
           type: 'message',
@@ -1660,7 +1703,7 @@ export async function queryGeminiApi(command, options = {}, ws) {
           toolCallId,
         }).catch(() => {});
 
-        pendingFunctionCalls.push({
+        allFunctionCallMeta.push({
           name: functionCall.name,
           args: toolArgs,
           thoughtSignature: functionCall.thoughtSignature,
@@ -1680,7 +1723,7 @@ export async function queryGeminiApi(command, options = {}, ws) {
         const output = allowed
           ? await executeTool(functionCall.name, toolArgs, workingDirectory)
           : `Permission denied for tool: ${functionCall.name}`;
-        const isError = !allowed || output.startsWith('Error');
+        const isError = !allowed || (typeof output === 'string' && output.startsWith('Error'));
 
         sendMessage(ws, {
           type: 'gemini-response',
@@ -1704,23 +1747,26 @@ export async function queryGeminiApi(command, options = {}, ws) {
           isError,
         }).catch(() => {});
 
-        contents.push({
-          role: 'model',
-          parts: buildModelTurnParts(result.content, pendingFunctionCalls.splice(0, pendingFunctionCalls.length), {
-            requireSyntheticThoughtSignatures: auth.authMethod === 'oauth',
-          }),
-        });
-        contents.push({
-          role: 'user',
-          parts: [{
-            functionResponse: {
-              name: functionCall.name,
-              id: toolCallId,
-              response: { result: output },
-            },
-          }],
+        functionResponses.push({
+          functionResponse: {
+            name: functionCall.name,
+            id: toolCallId,
+            response: { result: output },
+          },
         });
       }
+
+      // Push model turn with ALL function calls once, then ALL responses once
+      contents.push({
+        role: 'model',
+        parts: buildModelTurnParts(result.content, allFunctionCallMeta, {
+          requireSyntheticThoughtSignatures: auth.authMethod === 'oauth',
+        }),
+      });
+      contents.push({
+        role: 'user',
+        parts: functionResponses,
+      });
     }
 
     if (workingDirectory) {
