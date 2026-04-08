@@ -104,9 +104,11 @@ router.post('/configure', async (req, res) => {
         await fs.writeFile(configPath, JSON.stringify(existing, null, 2), { mode: 0o600 });
 
         // Also write a shell-sourceable file for convenience
+        // Escape values: replace \ with \\, " with \", $ with \$, ` with \`
+        const shellEscape = (s) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
         const rcPath = path.join(configDir, 'community-tools.env');
         const rcContent = Object.entries(envKeys)
-          .map(([k, v]) => `export ${k}="${v}"`)
+          .map(([k, v]) => `export ${k}="${shellEscape(v)}"`)
           .join('\n') + '\n';
         await fs.writeFile(rcPath, rcContent, { mode: 0o600 });
 
@@ -218,7 +220,7 @@ router.post('/configure', async (req, res) => {
     res.json({ success, ...results });
   } catch (error) {
     console.error('Community tools configure error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Configuration failed. Check server logs for details.' });
   }
 });
 
@@ -231,6 +233,10 @@ router.get('/status', async (req, res) => {
     }
 
     const resolvedPath = path.resolve(projectPath);
+    // Validate path is within home directory to prevent path traversal
+    if (!resolvedPath.startsWith(os.homedir())) {
+      return res.status(403).json({ error: 'Invalid path' });
+    }
     const status = {
       mcpRegistered: {},
       envKeys: {},
@@ -277,7 +283,7 @@ router.get('/status', async (req, res) => {
 
     res.json(status);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -297,7 +303,7 @@ router.get('/compute-nodes', async (req, res) => {
     }));
     res.json({ nodes, activeNodeId: config.activeNodeId });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -313,7 +319,7 @@ router.post('/detect-gpu', async (req, res) => {
     let gpuOutput = '';
 
     try {
-      gpuOutput = await ComputeNode.exec({
+      gpuOutput = await ComputeNode.run({
         nodeId,
         command: 'nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader 2>/dev/null || echo "NO_GPU"',
       });
@@ -342,7 +348,7 @@ router.post('/detect-gpu', async (req, res) => {
     // Detect conda
     let condaEnv = '';
     try {
-      const condaOut = await ComputeNode.exec({
+      const condaOut = await ComputeNode.run({
         nodeId,
         command: 'conda info --envs 2>/dev/null | grep "\\*" | head -1 || echo ""',
       });
@@ -354,10 +360,11 @@ router.post('/detect-gpu', async (req, res) => {
       // no conda
     }
 
-    // Build SSH command
+    // Build SSH command — sanitize user/host to prevent shell injection
+    const safeStr = (s) => String(s || '').replace(/[^a-zA-Z0-9._@\-]/g, '');
     const sshCmd = node.port && node.port !== 22
-      ? `ssh -p ${node.port} ${node.user}@${node.host}`
-      : `ssh ${node.user}@${node.host}`;
+      ? `ssh -p ${parseInt(node.port) || 22} ${safeStr(node.user)}@${safeStr(node.host)}`
+      : `ssh ${safeStr(node.user)}@${safeStr(node.host)}`;
 
     // Generate CLAUDE.md template
     const template = [
@@ -379,7 +386,7 @@ router.post('/detect-gpu', async (req, res) => {
     });
   } catch (error) {
     console.error('GPU detect error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

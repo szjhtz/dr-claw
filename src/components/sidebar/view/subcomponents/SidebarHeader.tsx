@@ -166,7 +166,7 @@ export default function SidebarHeader({
               onClick={onOpenAutoResearch}
             >
               <FlaskConical className="h-4 w-4" />
-              Auto Research
+              {t('common:tabs.autoResearch', { defaultValue: 'Auto Research' })}
             </Button>
 
             <Button
@@ -288,6 +288,16 @@ export default function SidebarHeader({
             >
               <Newspaper className="h-4 w-4" />
               {t('common:tabs.news')}
+            </Button>
+
+            <Button
+              type="button"
+              variant={activeTab === 'autoresearch' ? 'secondary' : 'outline'}
+              className="h-10 w-full justify-start rounded-xl"
+              onClick={onOpenAutoResearch}
+            >
+              <FlaskConical className="h-4 w-4" />
+              {t('common:tabs.autoResearch', { defaultValue: 'Auto Research' })}
             </Button>
 
             <Button
