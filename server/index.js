@@ -69,6 +69,7 @@ import computeRoutes from './routes/compute.js';
 import newsRoutes from './routes/news.js';
 import autoResearchRoutes from './routes/auto-research.js';
 import referencesRoutes from './routes/references.js';
+import memoryRoutes from './routes/memory.js';
 import communityToolsRoutes from './routes/community-tools.js';
 import { initializeDatabase, sessionDb, tagDb } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
@@ -509,6 +510,9 @@ app.use('/api/auto-research', authenticateToken, autoResearchRoutes);
 
 // References (literature library) API Routes (protected)
 app.use('/api/references', authenticateToken, referencesRoutes);
+
+// Memory API Routes (protected)
+app.use('/api/memory', authenticateToken, memoryRoutes);
 
 // Community Tools API Routes (protected)
 app.use('/api/community-tools', authenticateToken, communityToolsRoutes);
@@ -1541,7 +1545,7 @@ function handleChatConnection(ws, request) {
                     return;
                 }
                 
-                queryClaudeSDK(data.command, { ...data.options, env: sessionEnv }, writer).catch(error => {
+                queryClaudeSDK(data.command, { ...data.options, userId, env: sessionEnv }, writer).catch(error => {
                     console.error('[ERROR] Claude query error:', error);
                 });
             } else if (data.type === 'cursor-command') {
@@ -1628,7 +1632,7 @@ function handleChatConnection(ws, request) {
                 );
                 writer.telemetryContext = { ...telemetryContext, provider: 'gemini', telemetryEnabled: commandTelemetryEnabled };
                 writer.setProjectPath(data.options?.projectPath || data.options?.cwd || null);
-                spawnGemini(data.command, { ...data.options, env: sessionEnv }, writer).catch(error => {
+                spawnGemini(data.command, { ...data.options, userId, env: sessionEnv }, writer).catch(error => {
                     console.error('[ERROR] Gemini spawn error:', error);
                 });
             } else if (data.type === 'openrouter-command') {
@@ -1657,7 +1661,7 @@ function handleChatConnection(ws, request) {
                 );
                 writer.telemetryContext = { ...telemetryContext, provider: 'openrouter', telemetryEnabled: commandTelemetryEnabled };
                 writer.setProjectPath(data.options?.projectPath || data.options?.cwd || null);
-                queryOpenRouter(data.command, { ...data.options, env: sessionEnv }, writer).catch(error => {
+                queryOpenRouter(data.command, { ...data.options, userId, env: sessionEnv }, writer).catch(error => {
                     console.error('[ERROR] OpenRouter query error:', error);
                 });
             } else if (data.type === 'local-command') {
@@ -1687,7 +1691,7 @@ function handleChatConnection(ws, request) {
                 );
                 writer.telemetryContext = { ...telemetryContext, provider: 'local', telemetryEnabled: commandTelemetryEnabled };
                 writer.setProjectPath(data.options?.projectPath || data.options?.cwd || null);
-                queryLocalGPU(data.command, { ...data.options, env: sessionEnv }, writer).catch(error => {
+                queryLocalGPU(data.command, { ...data.options, userId, env: sessionEnv }, writer).catch(error => {
                     console.error('[ERROR] Local GPU query error:', error);
                 });
             } else if (data.type === 'cursor-resume') {
